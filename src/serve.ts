@@ -3,11 +3,12 @@ import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
 import { loadRecords, appendRecord } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
+import { loadAccounts } from './account-config.js'
 import {
   getMobileDeviceList, queryLocateResult, parseLocateInfo,
   regeoAddress, locateDevice, decodeNetworkType, decodeSignalStrength,
 } from './api.js'
-import type { Session, LocationRecord } from './types.js'
+import type { Session, LocationRecord, AccountConfig } from './types.js'
 
 const PUBLIC_DIR = join(process.cwd(), 'public')
 const PORT = parseInt(process.env.PORT || '3000', 10)
@@ -16,63 +17,61 @@ const MAX_INTERVAL = 3600_000
 const LOGIN_RETRY_COUNT = parseInt(process.env.LOGIN_RETRY_COUNT || '3', 10)
 const LOGIN_RETRY_INTERVAL = parseInt(process.env.LOGIN_RETRY_INTERVAL || '5000', 10)
 
-let session: Session | null = null
+const accountConfigs = loadAccounts()
+const sessions = new Map<string, Session>()
+const locatingFlags = new Map<string, boolean>()
 let recordingTimer: ReturnType<typeof setInterval> | null = null
-let lastRecordTime = 0
-let isLocating = false
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
-async function ensureSession(): Promise<Session> {
-  if (session) {
+async function ensureSession(acct: AccountConfig): Promise<Session> {
+  const existing = sessions.get(acct.phone)
+  if (existing) {
     try {
       const r = await fetch('https://cloud.hihonor.com/findmydevice/api/html/getHomeData', {
         method: 'POST',
         headers: {
-          'Cookie': session.cookies,
-          'csrftoken': session.csrftoken,
+          'Cookie': existing.cookies,
+          'csrftoken': existing.csrftoken,
           'content-type': 'application/json;charset=UTF-8',
           'Referer': 'https://cloud.hihonor.com/findmydevice/webFindPhone.html',
         },
         body: JSON.stringify({ traceId: `test_${Date.now()}`, lang: '' }),
       })
       const d = await r.json()
-      if (d.userid) return session
-      console.log('  session 已过期，准备重新登录')
+      if (d.userid) return existing
+      console.log(`  ${acct.name} session 已过期，准备重新登录`)
     } catch {}
   } else {
-    console.log('  session 为空，准备重新登录')
+    console.log(`  ${acct.name} session 为空，准备重新登录`)
   }
-
-  const phone = process.env.HONOR_PHONE
-  const password = process.env.HONOR_PASSWORD
-  if (!phone || !password) throw new Error('请设置 HONOR_PHONE 和 HONOR_PASSWORD')
 
   let lastErr: Error | undefined
   for (let i = 1; i <= LOGIN_RETRY_COUNT; i++) {
     try {
       if (i > 1) {
-        console.log(`  第 ${i}/${LOGIN_RETRY_COUNT} 次重试登录...`)
+        console.log(`  ${acct.name} 第 ${i}/${LOGIN_RETRY_COUNT} 次重试登录...`)
         await sleep(LOGIN_RETRY_INTERVAL)
       }
-      session = await loginViaHttp(phone, password)
-      console.log('  重新登录成功')
-      return session
+      const s = await loginViaHttp(acct.phone, acct.password)
+      sessions.set(acct.phone, s)
+      console.log(`  ${acct.name} 重新登录成功`)
+      return s
     } catch (err: any) {
       lastErr = err
-      console.error(`  登录失败(第${i}次): ${err.message}`)
+      console.error(`  ${acct.name} 登录失败(第${i}次): ${err.message}`)
     }
   }
-  throw lastErr || new Error('登录失败')
+  throw lastErr || new Error(`${acct.name} 登录失败`)
 }
 
-async function doLocate(): Promise<{ ok: boolean; record?: LocationRecord; error?: string }> {
-  if (isLocating) return { ok: false, error: '正在定位中，请稍候' }
-  isLocating = true
+async function doLocate(acct: AccountConfig): Promise<{ ok: boolean; record?: LocationRecord; error?: string }> {
+  if (locatingFlags.get(acct.phone)) return { ok: false, error: `正在定位中，请稍候` }
+  locatingFlags.set(acct.phone, true)
   try {
-    const s = await ensureSession()
+    const s = await ensureSession(acct)
     const deviceResp = await getMobileDeviceList(s)
     if (deviceResp.code !== '0' || !deviceResp.deviceList?.length) {
       return { ok: false, error: '未找到设备' }
@@ -99,6 +98,8 @@ async function doLocate(): Promise<{ ok: boolean; record?: LocationRecord; error
       battery: info.batteryStatus?.percentage?.toString() ?? '',
       address,
       deviceName: device.deviceAliasName,
+      account: acct.phone,
+      accountName: acct.name,
       networkName: info.networkInfo?.name,
       networkType: decodeNetworkType(info.networkInfo?.type ?? ''),
       networkSignal: decodeSignalStrength(info.networkInfo?.signal ?? ''),
@@ -111,7 +112,7 @@ async function doLocate(): Promise<{ ok: boolean; record?: LocationRecord; error
   } catch (err: any) {
     return { ok: false, error: err.message }
   } finally {
-    isLocating = false
+    locatingFlags.set(acct.phone, false)
   }
 }
 
@@ -124,15 +125,16 @@ function getInterval(): number {
 }
 
 async function recordingTick(): Promise<void> {
-  const result = await doLocate()
-  if (result.ok && result.record) {
-    const records = loadRecords()
-    const last = records[records.length - 1]
-    if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
-      return
+  for (const acct of accountConfigs) {
+    const result = await doLocate(acct)
+    if (result.ok && result.record) {
+      const records = loadRecords()
+      const last = [...records].reverse().find(r => r.account === acct.phone)
+      if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
+        continue
+      }
+      appendRecord(result.record)
     }
-    appendRecord(result.record)
-    lastRecordTime = Date.now()
   }
 }
 
@@ -141,7 +143,7 @@ function startRecording(): { ok: boolean; interval: number } {
   const interval = getInterval()
   recordingTimer = setInterval(recordingTick, interval)
   recordingTick()
-  console.log(`录制已启动，间隔 ${interval / 1000}s`)
+  console.log(`录制已启动，间隔 ${interval / 1000}s，账号数: ${accountConfigs.length}`)
   return { ok: true, interval }
 }
 
@@ -151,6 +153,24 @@ function stopRecording(): boolean {
   recordingTimer = null
   console.log('录制已停止')
   return true
+}
+
+function getAccountStatus(): any[] {
+  const allRecords = loadRecords()
+  return accountConfigs.map(acct => {
+    const records = allRecords.filter(r => r.account === acct.phone)
+    const last = records[records.length - 1]
+    return {
+      phone: acct.phone,
+      name: acct.name,
+      count: records.length,
+      lastUpdate: last?.timestamp || null,
+      lastLat: last?.lat || null,
+      lastLng: last?.lng || null,
+      lastAddress: last?.address || null,
+      isLocating: locatingFlags.get(acct.phone) || false,
+    }
+  })
 }
 
 const MIME: Record<string, string> = {
@@ -181,33 +201,49 @@ function json(res: any, data: any, status = 200): void {
 }
 
 async function handleApi(req: any, res: any, url: URL): Promise<void> {
+  if (url.pathname === '/api/accounts') {
+    const allRecords = loadRecords()
+    const result = accountConfigs.map(acct => {
+      const records = allRecords.filter(r => r.account === acct.phone)
+      const last = records[records.length - 1]
+      return {
+        phone: acct.phone,
+        name: acct.name,
+        records,
+        isLocating: locatingFlags.get(acct.phone) || false,
+        lastUpdate: last?.timestamp || null,
+      }
+    })
+    return json(res, result)
+  }
+
   if (url.pathname === '/api/data') {
     return json(res, loadRecords())
   }
 
   if (url.pathname === '/api/status') {
-    const records = loadRecords()
+    const isAnyLocating = accountConfigs.some(a => locatingFlags.get(a.phone))
     return json(res, {
       recording: recordingTimer !== null,
-      count: records.length,
-      lastUpdate: records.length > 0 ? records[records.length - 1].timestamp : null,
-      isLocating,
+      accounts: getAccountStatus(),
+      isAnyLocating,
     })
   }
 
   if (url.pathname === '/api/locate' && req.method === 'POST') {
-    const result = await doLocate()
+    const phone = url.searchParams.get('account') || accountConfigs[0]?.phone
+    const acct = accountConfigs.find(a => a.phone === phone)
+    if (!acct) return json(res, { ok: false, error: '账号不存在' }, 404)
+    const result = await doLocate(acct)
     if (result.ok && result.record) {
       appendRecord(result.record)
-      lastRecordTime = Date.now()
       return json(res, { ok: true, record: result.record })
     }
     return json(res, { ok: false, error: result.error })
   }
 
   if (url.pathname === '/api/record/start' && req.method === 'POST') {
-    const r = startRecording()
-    return json(res, r)
+    return json(res, startRecording())
   }
 
   if (url.pathname === '/api/record/stop' && req.method === 'POST') {
@@ -216,14 +252,19 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
   }
 
   if (url.pathname === '/api/debug/expire-session' && req.method === 'POST') {
-    const old = session?.userid
-    session = null
-    const cachePath = join(process.cwd(), '.session-cache.json')
-    if (existsSync(cachePath)) {
-      unlinkSync(cachePath)
-      console.log('  已删除 session 缓存文件')
+    const phone = url.searchParams.get('account')
+    if (phone) {
+      sessions.delete(phone)
+      const cachePath = join(process.cwd(), `.session-cache-${phone}.json`)
+      if (existsSync(cachePath)) unlinkSync(cachePath)
+      return json(res, { ok: true, expiredSession: phone })
     }
-    return json(res, { ok: true, expiredSession: old || 'none' })
+    sessions.clear()
+    for (const acct of accountConfigs) {
+      const cachePath = join(process.cwd(), `.session-cache-${acct.phone}.json`)
+      if (existsSync(cachePath)) unlinkSync(cachePath)
+    }
+    return json(res, { ok: true, expiredSession: 'all' })
   }
 
   json(res, { error: 'not found' }, 404)
@@ -243,7 +284,9 @@ export function startServer(): void {
 
   server.listen(PORT, () => {
     console.log(`=== 设备轨迹服务 ===`)
+    console.log(`账号数: ${accountConfigs.length}`)
+    accountConfigs.forEach(a => console.log(`  ${a.name} (${a.phone.slice(-4)})`))
     console.log(`前端页面: http://localhost:${PORT}`)
-    console.log(`数据接口: http://localhost:${PORT}/api/data`)
+    console.log(`数据接口: http://localhost:${PORT}/api/accounts`)
   })
 }

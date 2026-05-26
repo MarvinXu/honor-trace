@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.js.map
-.session-cache.json
+.session-cache*
+accounts.json
 data/
-hwid*.js
+*.ps1

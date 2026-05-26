@@ -1,3 +1,9 @@
+export interface AccountConfig {
+  phone: string
+  password: string
+  name: string
+}
+
 export interface SimDetailInfo {
   simNo: string;
   operatorName: string;
@@ -79,6 +85,8 @@ export interface LocationRecord {
   battery: string;
   address: string;
   deviceName: string;
+  account: string;
+  accountName: string;
   networkName?: string;
   networkType?: string;
   networkSignal?: string;

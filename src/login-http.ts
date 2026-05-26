@@ -5,23 +5,26 @@ import type { Session } from './types.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36';
 
-function cachePath(): string {
-  return process.env.SESSION_CACHE || join(process.cwd(), '.session-cache.json');
+function cachePath(suffix?: string): string {
+  const base = process.env.SESSION_CACHE || join(process.cwd(), '.session-cache.json')
+  if (!suffix) return base
+  const ext = base.endsWith('.json') ? '' : '.json'
+  return base.replace(/\.json$/, '') + '-' + suffix + ext
 }
 
-function loadCachedSession(): Session | null {
-  const path = cachePath();
-  if (!existsSync(path)) return null;
+function loadCachedSession(cachePathOverride?: string): Session | null {
+  const path = cachePathOverride || cachePath()
+  if (!existsSync(path)) return null
   try {
-    const data = JSON.parse(readFileSync(path, 'utf-8'));
-    if (data.cookies && data.csrftoken && data.userid) return data as Session;
+    const data = JSON.parse(readFileSync(path, 'utf-8'))
+    if (data.cookies && data.csrftoken && data.userid) return data as Session
   } catch {}
-  return null;
+  return null
 }
 
-function saveSession(s: Session): void {
+function saveSession(s: Session, cachePathOverride?: string): void {
   try {
-    writeFileSync(cachePath(), JSON.stringify(s, null, 2));
+    writeFileSync(cachePathOverride || cachePath(), JSON.stringify(s, null, 2))
   } catch {}
 }
 
@@ -113,18 +116,18 @@ async function doLogin(phone: string, password: string): Promise<Session> {
   }
 }
 
-export async function loginViaHttp(phone: string, password: string): Promise<Session> {
-  const cached = loadCachedSession();
+export async function loginViaHttp(phone: string, password: string, cachePathOverride?: string): Promise<Session> {
+  const cached = loadCachedSession(cachePathOverride || cachePath(phone))
   if (cached) {
-    const valid = await testSession(cached);
+    const valid = await testSession(cached)
     if (valid) {
-      console.log('  使用缓存的 session');
-      return cached;
+      console.log(`  使用缓存的 session (${phone})`)
+      return cached
     }
-    console.log('  session 已过期，重新登录');
+    console.log(`  session (${phone}) 已过期，重新登录`)
   }
 
-  const session = await doLogin(phone, password);
-  saveSession(session);
-  return session;
+  const session = await doLogin(phone, password)
+  saveSession(session, cachePathOverride || cachePath(phone))
+  return session
 }
