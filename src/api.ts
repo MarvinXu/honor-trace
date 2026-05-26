@@ -6,6 +6,8 @@ import type {
   DeviceItem,
   LocateInfo,
   Session,
+  SimDetailInfo,
+  SimInfo,
 } from './types.js';
 
 const BASE = 'https://cloud.hihonor.com';
@@ -101,16 +103,26 @@ export async function locateDevice(
 
 export function parseLocateInfo(raw: string): LocateInfo {
   const parsed: any = JSON.parse(raw);
-  if (typeof parsed.batteryStatus === 'string') {
-    parsed.batteryStatus = JSON.parse(parsed.batteryStatus);
-  }
-  if (typeof parsed.networkInfo === 'string') {
-    parsed.networkInfo = JSON.parse(parsed.networkInfo);
-  }
-  if (typeof parsed.simDetailInfo === 'string') {
-    parsed.simDetailInfo = JSON.parse(parsed.simDetailInfo);
+  for (const key of ['batteryStatus', 'networkInfo', 'simInfo', 'simDetailInfo']) {
+    if (typeof parsed[key] === 'string') {
+      parsed[key] = JSON.parse(parsed[key]);
+    }
   }
   return parsed as LocateInfo;
+}
+
+export function decodeNetworkType(code: string): string {
+  const map: Record<string, string> = {
+    '0': 'WiFi', '1': '2G', '2': '3G', '3': '4G', '4': '5G',
+  }
+  return map[code] || code
+}
+
+export function decodeSignalStrength(signal: string): string {
+  const map: Record<string, string> = {
+    '0': '无', '1': '弱', '2': '中', '3': '良', '4': '强',
+  }
+  return map[signal] || signal
 }
 
 const AMAP_FALLBACK_KEYS = [

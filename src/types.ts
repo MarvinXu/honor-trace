@@ -12,6 +12,10 @@ export interface BatteryStatus {
   percentage: string;
 }
 
+export interface SimInfo {
+  no: string;
+}
+
 export interface NetworkInfo {
   name: string;
   signal: string;
@@ -24,6 +28,8 @@ export interface LocateInfo {
   batteryStatus: BatteryStatus;
   networkInfo: NetworkInfo;
   simDetailInfo: SimDetailInfo[];
+  simInfo: SimInfo;
+  isLockScreen: number;
   longitude_WGS: number;
   latitude_WGS: number;
   createTime: string;
@@ -73,6 +79,13 @@ export interface LocationRecord {
   battery: string;
   address: string;
   deviceName: string;
+  networkName?: string;
+  networkType?: string;
+  networkSignal?: string;
+  simNo?: string;
+  carrier?: string;
+  isCharging?: string;
+  isLockScreen?: string;
 }
 
 export interface RegeoResponse {

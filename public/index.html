@@ -34,14 +34,29 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
   <h3>设备轨迹</h3>
   <div class="stat">记录点数: <span id="count">0</span></div>
   <div class="stat">最近更新: <span id="update">-</span></div>
-  <div class="stat">累计距离: <span id="dist">0</span> km</div>
   <div class="stat">定位状态: <span id="locateStatus">空闲</span></div>
+  <div id="detail" style="display:none;margin:8px 0;padding:8px;background:#f8f9fa;border-radius:6px;font-size:12px;line-height:1.7">
+    <div style="font-weight:600;color:#333;margin-bottom:4px">最新定位</div>
+    <div>地址: <span id="detAddress" style="color:#555"></span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <span>坐标: <span id="detCoords" style="color:#555"></span></span>
+      <span>精度: <span id="detAccuracy" style="color:#555"></span>m</span>
+      <span>电量: <span id="detBattery" style="color:#555"></span>% <span id="detCharging" style="color:#555"></span></span>
+    </div>
+    <div>网络: <span id="detNetwork" style="color:#555"></span></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <span>SIM: <span id="detSim" style="color:#555"></span></span>
+      <span>运营商: <span id="detCarrier" style="color:#555"></span></span>
+      <span>锁屏: <span id="detLock" style="color:#555"></span></span>
+    </div>
+    <div>时间: <span id="detTime" style="color:#555"></span></div>
+  </div>
   <div class="ctrl">
     <button class="btn btn-primary" id="btnLocate" onclick="doLocate()">单次定位</button>
     <button class="btn btn-success" id="btnStart" onclick="startRecord()" style="display:none">开始录制</button>
     <button class="btn btn-danger" id="btnStop" onclick="stopRecord()" style="display:none">停止录制</button>
   </div>
-  <div class="note">数据保存在 data/location-data.json</div>
+  <div class="note">红线=轨迹 | 蓝点=记录点 | 红点=最新位置</div>
 </div>
 <div id="toast"></div>
 <script>
@@ -51,20 +66,11 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
 }).addTo(map)
 
-let markers = [], polyline = null, lastCount = 0
+let trailLine = null, dotMarkers = [], lastCount = 0
 
-function toast(msg, dur) {
-  const el = document.getElementById('toast')
-  el.textContent = msg
-  el.classList.add('show')
-  setTimeout(() => el.classList.remove('show'), dur || 2000)
-}
-
-function distKm(lat1, lng1, lat2, lng2) {
-  const R = 6371
-  const dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+function clearLayers() {
+  if (trailLine) { map.removeLayer(trailLine); trailLine = null }
+  dotMarkers.forEach(m => map.removeLayer(m)); dotMarkers = []
 }
 
 function formatTime(iso) {
@@ -72,45 +78,65 @@ function formatTime(iso) {
   return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 }
 
-function render(data) {
-  const len = data.length
+
+function renderAll(raw) {
+  clearLayers()
+  const len = raw.length
   document.getElementById('count').textContent = len
-  document.getElementById('update').textContent = len ? formatTime(data[len-1].timestamp) : '-'
+  document.getElementById('update').textContent = len ? formatTime(raw[len-1].timestamp) : '-'
+  if (len === 0) { document.getElementById('detail').style.display = 'none'; return }
 
-  let totalDist = 0
-  for (let i = 1; i < len; i++) totalDist += distKm(data[i-1].lat, data[i-1].lng, data[i].lat, data[i].lng)
-  document.getElementById('dist').textContent = totalDist.toFixed(2)
+  // trail line
+  const coords = raw.map(d => [d.lat, d.lng])
+  trailLine = L.polyline(coords, { color: '#e74c3c', weight: 3, opacity: 0.8 }).addTo(map)
 
-  if (markers.length) { markers.forEach(m => map.removeLayer(m)); markers = [] }
-  if (polyline) { map.removeLayer(polyline); polyline = null }
-
-  if (len === 0) return
-
-  const coords = data.map(d => [d.lat, d.lng])
-  polyline = L.polyline(coords, { color: '#e74c3c', weight: 3, opacity: 0.7 }).addTo(map)
-
-  data.forEach((d, i) => {
-    const color = i === 0 ? '#27ae60' : i === len-1 ? '#e74c3c' : '#3498db'
-    const size = i === len-1 ? 10 : 7
-    const label = i === 0 ? '(起点) ' : i === len-1 ? '(最新) ' : ''
+  // dots (latest in different color)
+  raw.forEach((d, i) => {
+    const isLatest = i === len - 1
+    const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
+    const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
     const m = L.circleMarker([d.lat, d.lng], {
-      radius: size, color, fillColor: color, fillOpacity: 0.8, weight: 2,
+      radius: isLatest ? 7 : 5,
+      color: isLatest ? '#e74c3c' : '#3498db',
+      fillColor: isLatest ? '#e74c3c' : '#3498db',
+      fillOpacity: isLatest ? 0.9 : 0.7,
+      weight: isLatest ? 2 : 1,
     }).addTo(map)
-    m.bindPopup(`<strong>${label}${formatTime(d.timestamp)}</strong><br>
+    m.bindPopup(`<strong>${isLatest ? '最新 · ' : ''}${formatTime(d.timestamp)}</strong><br>
       ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)}<br>
-      精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}<br>
-      ${d.address || '地址未知'}`)
-    markers.push(m)
+      精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
+      ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}`)
+    dotMarkers.push(m)
   })
 
-  map.fitBounds(polyline.getBounds().pad(0.1))
+  // show latest detail in panel
+  const last = raw[len-1]
+  const net = [last.networkType, last.networkName, last.networkSignal].filter(Boolean).join(' ')
+  const sim = last.simNo || ''
+  document.getElementById('detAddress').textContent = last.address || '未知'
+  document.getElementById('detCoords').textContent = `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}`
+  document.getElementById('detAccuracy').textContent = last.accuracy || '-'
+  document.getElementById('detBattery').textContent = last.battery || '-'
+  document.getElementById('detNetwork').textContent = net || '-'
+  document.getElementById('detSim').textContent = sim || '-'
+  document.getElementById('detCarrier').textContent = last.carrier || '-'
+  document.getElementById('detCharging').textContent = last.isCharging === '是' ? '⚡' : ''
+  document.getElementById('detLock').textContent = last.isLockScreen || '-'
+  document.getElementById('detTime').textContent = formatTime(last.timestamp)
+  document.getElementById('detail').style.display = ''
+
+  map.fitBounds(L.latLngBounds(coords).pad(0.15))
 }
 
 async function load() {
   try {
     const resp = await fetch('/api/data')
     const data = await resp.json()
-    if (data.length !== lastCount) { lastCount = data.length; lastKnownCount = data.length; render(data) }
+    if (data.length !== lastCount) {
+      lastCount = data.length
+      lastKnownCount = data.length
+      renderAll(data)
+    }
   } catch {}
 }
 

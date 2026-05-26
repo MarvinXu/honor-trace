@@ -5,7 +5,7 @@ import { loadRecords, appendRecord } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
 import {
   getMobileDeviceList, queryLocateResult, parseLocateInfo,
-  regeoAddress, locateDevice,
+  regeoAddress, locateDevice, decodeNetworkType, decodeSignalStrength,
 } from './api.js'
 import type { Session, LocationRecord } from './types.js'
 
@@ -95,10 +95,17 @@ async function doLocate(): Promise<{ ok: boolean; record?: LocationRecord; error
       timestamp: ts,
       lat: info.latitude_WGS,
       lng: info.longitude_WGS,
-      accuracy: info.accuracy,
+      accuracy: info.accuracy?.toString() ?? '',
       battery: info.batteryStatus?.percentage?.toString() ?? '',
       address,
       deviceName: device.deviceAliasName,
+      networkName: info.networkInfo?.name,
+      networkType: decodeNetworkType(info.networkInfo?.type ?? ''),
+      networkSignal: decodeSignalStrength(info.networkInfo?.signal ?? ''),
+      simNo: info.simInfo?.no,
+      carrier: info.simDetailInfo?.[0]?.operatorName,
+      isCharging: info.batteryStatus?.isCharging === '1' ? '是' : '否',
+      isLockScreen: info.isLockScreen === 1 ? '是' : '否',
     }
     return { ok: true, record }
   } catch (err: any) {
