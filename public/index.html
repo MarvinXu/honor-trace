@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设备移动轨迹</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#map{height:100%;width:100%}
+#panel{position:fixed;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,.95);border-radius:10px;padding:14px 18px;box-shadow:0 2px 12px rgba(0,0,0,.15);min-width:220px;font-size:13px;line-height:1.8;max-height:calc(100vh - 24px);overflow-y:auto}
+#panel h3{margin:0 0 8px;font-size:15px;color:#333}
+#panel .stat{color:#666}
+#panel .stat span{color:#222;font-weight:600}
+.ctrl{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}
+.btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:opacity .2s}
+.btn:hover{opacity:.8}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#3498db;color:#fff}
+.btn-success{background:#27ae60;color:#fff}
+.btn-danger{background:#e74c3c;color:#fff}
+.btn-warning{background:#f39c12;color:#fff}
+#panel .note{font-size:11px;color:#999;margin-top:4px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2000;background:rgba(0,0,0,.8);color:#fff;padding:8px 20px;border-radius:6px;font-size:13px;transition:opacity .3s;opacity:0;pointer-events:none}
+#toast.show{opacity:1}
+.leaflet-popup-content{margin:8px 12px;font-size:13px;line-height:1.6;min-width:180px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h3>设备轨迹</h3>
+  <div class="stat">记录点数: <span id="count">0</span></div>
+  <div class="stat">最近更新: <span id="update">-</span></div>
+  <div class="stat">累计距离: <span id="dist">0</span> km</div>
+  <div class="stat">定位状态: <span id="locateStatus">空闲</span></div>
+  <div class="ctrl">
+    <button class="btn btn-primary" id="btnLocate" onclick="doLocate()">单次定位</button>
+    <button class="btn btn-success" id="btnStart" onclick="startRecord()" style="display:none">开始录制</button>
+    <button class="btn btn-danger" id="btnStop" onclick="stopRecord()" style="display:none">停止录制</button>
+  </div>
+  <div class="note">数据保存在 data/location-data.json</div>
+</div>
+<div id="toast"></div>
+<script>
+const map = L.map('map').setView([35, 110], 4)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19,
+}).addTo(map)
+
+let markers = [], polyline = null, lastCount = 0
+
+function toast(msg, dur) {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.classList.add('show')
+  setTimeout(() => el.classList.remove('show'), dur || 2000)
+}
+
+function distKm(lat1, lng1, lat2, lng2) {
+  const R = 6371
+  const dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+}
+
+function formatTime(iso) {
+  const d = new Date(iso)
+  return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+}
+
+function render(data) {
+  const len = data.length
+  document.getElementById('count').textContent = len
+  document.getElementById('update').textContent = len ? formatTime(data[len-1].timestamp) : '-'
+
+  let totalDist = 0
+  for (let i = 1; i < len; i++) totalDist += distKm(data[i-1].lat, data[i-1].lng, data[i].lat, data[i].lng)
+  document.getElementById('dist').textContent = totalDist.toFixed(2)
+
+  if (markers.length) { markers.forEach(m => map.removeLayer(m)); markers = [] }
+  if (polyline) { map.removeLayer(polyline); polyline = null }
+
+  if (len === 0) return
+
+  const coords = data.map(d => [d.lat, d.lng])
+  polyline = L.polyline(coords, { color: '#e74c3c', weight: 3, opacity: 0.7 }).addTo(map)
+
+  data.forEach((d, i) => {
+    const color = i === 0 ? '#27ae60' : i === len-1 ? '#e74c3c' : '#3498db'
+    const size = i === len-1 ? 10 : 7
+    const label = i === 0 ? '(起点) ' : i === len-1 ? '(最新) ' : ''
+    const m = L.circleMarker([d.lat, d.lng], {
+      radius: size, color, fillColor: color, fillOpacity: 0.8, weight: 2,
+    }).addTo(map)
+    m.bindPopup(`<strong>${label}${formatTime(d.timestamp)}</strong><br>
+      ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)}<br>
+      精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}<br>
+      ${d.address || '地址未知'}`)
+    markers.push(m)
+  })
+
+  map.fitBounds(polyline.getBounds().pad(0.1))
+}
+
+async function load() {
+  try {
+    const resp = await fetch('/api/data')
+    const data = await resp.json()
+    if (data.length !== lastCount) { lastCount = data.length; lastKnownCount = data.length; render(data) }
+  } catch {}
+}
+
+async function doLocate() {
+  const btn = document.getElementById('btnLocate')
+  btn.disabled = true; btn.textContent = '定位中...'
+  document.getElementById('locateStatus').textContent = '定位中'
+  try {
+    const resp = await fetch('/api/locate', { method: 'POST' })
+    const result = await resp.json()
+    if (result.ok) {
+      toast(`定位成功: ${result.record.address || result.record.lat+', '+result.record.lng}`)
+      await load()
+    } else {
+      toast(`定位失败: ${result.error}`, 3000)
+    }
+  } catch (e) {
+    toast('请求失败: '+e.message, 3000)
+  }
+  btn.disabled = false; btn.textContent = '单次定位'
+  document.getElementById('locateStatus').textContent = '空闲'
+}
+
+async function startRecord() {
+  document.getElementById('locateStatus').textContent = '录制中'
+  try {
+    const resp = await fetch('/api/record/start', { method: 'POST' })
+    const r = await resp.json()
+    if (r.ok) {
+      document.getElementById('btnStart').style.display = 'none'
+      document.getElementById('btnStop').style.display = ''
+      toast(`录制已启动，间隔 ${r.interval/1000}s`)
+    } else {
+      toast('启动失败', 3000)
+    }
+  } catch {}
+}
+
+async function stopRecord() {
+  try {
+    await fetch('/api/record/stop', { method: 'POST' })
+    document.getElementById('btnStart').style.display = ''
+    document.getElementById('btnStop').style.display = 'none'
+    document.getElementById('locateStatus').textContent = '空闲'
+    toast('录制已停止')
+  } catch {}
+}
+
+let lastKnownCount = 0
+let statusPollTimer = null
+
+async function checkStatus() {
+  try {
+    const resp = await fetch('/api/status')
+    const s = await resp.json()
+    if (s.recording) {
+      document.getElementById('btnStart').style.display = 'none'
+      document.getElementById('btnStop').style.display = ''
+      document.getElementById('locateStatus').textContent = '录制中'
+    } else {
+      document.getElementById('btnStart').style.display = ''
+      document.getElementById('btnStop').style.display = 'none'
+      if (!s.isLocating) document.getElementById('locateStatus').textContent = '空闲'
+    }
+    if (s.count !== lastKnownCount) {
+      lastKnownCount = s.count
+      load()
+    }
+  } catch {}
+}
+
+statusPollTimer = setInterval(checkStatus, 5000)
+checkStatus()
+load()
+</script>
+</body>
+</html>

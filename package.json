@@ -1,0 +1,20 @@
+{
+  "name": "honor-trace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "serve": "tsx src/index.ts serve",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "@types/node": "^22.14.1"
+  }
+}
