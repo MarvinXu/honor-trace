@@ -10,7 +10,7 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 #map{height:100%;width:100%}
-#panel{position:fixed;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,.95);border-radius:10px;padding:14px 18px;box-shadow:0 2px 12px rgba(0,0,0,.15);width:320px;font-size:13px;line-height:1.8;max-height:calc(100vh - 24px);overflow-y:auto}
+#panel{position:fixed;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,.95);border-radius:10px;padding:14px 18px;box-shadow:0 2px 12px rgba(0,0,0,.15);width:360px;font-size:13px;line-height:1.8;max-height:calc(100vh - 24px);overflow-y:auto}
 #panel h3{margin:0 0 8px;font-size:15px;color:#333}
 #panel .stat{color:#666}
 #panel .stat span{color:#222;font-weight:600}
@@ -32,6 +32,13 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2000;background:rgba(0,0,0,.8);color:#fff;padding:8px 20px;border-radius:6px;font-size:13px;transition:opacity .3s;opacity:0;pointer-events:none}
 #toast.show{opacity:1}
 .leaflet-popup-content{margin:8px 12px;font-size:13px;line-height:1.6;min-width:180px}
+.filter-row{display:flex;gap:4px;align-items:center;margin:4px 0;font-size:12px}
+.filter-row input{border:1px solid #ddd;border-radius:4px;padding:2px 6px;font-size:12px;flex:1;min-width:0}
+#pointList{margin-top:6px;max-height:220px;overflow-y:auto;font-size:12px}
+.point-item{cursor:pointer;padding:3px 6px;border-radius:4px;border-bottom:1px solid #eee}
+.point-item:hover{background:#e8f4fd}
+.point-item .pt-time{color:#333;font-weight:600;font-size:11px}
+.point-item .pt-addr{color:#888;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -63,20 +70,63 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
     <button class="btn btn-danger" id="btnStop" onclick="stopRecord()" style="display:none">停止录制</button>
   </div>
   <div class="note">每账号独立颜色 | 最新点大圆标记</div>
+  <div id="filterArea">
+    <div class="filter-row">
+      <span>从</span>
+      <input type="datetime-local" id="filterFrom" onchange="applyFilter()">
+      <span>至</span>
+      <input type="datetime-local" id="filterTo" onchange="applyFilter()">
+    </div>
+  </div>
+  <div id="pointList"></div>
 </div>
 <div id="toast"></div>
 <script>
-const map = L.map('map').setView([35, 110], 4)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors',
-  maxZoom: 19,
+const map = L.map('map').setView([20, 110], 3)
+L.tileLayer('https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+  attribution: '&copy; 高德地图',
+  subdomains: ['webrd01', 'webrd02', 'webrd03', 'webrd04'],
+  maxZoom: 18,
 }).addTo(map)
+
+// WGS84 → GCJ-02 坐标转换（高德/火星坐标系）
+const GCJ_PI = 3.141592653589793
+const GCJ_A = 6378245.0
+const GCJ_EE = 0.00669342162296594323
+function isOutOfChina(lat, lng) { return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271 }
+function gcjTransformLat(x, y) {
+  let t = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x))
+  t += (20*Math.sin(6*x*GCJ_PI) + 20*Math.sin(2*x*GCJ_PI)) * 2/3
+  t += (20*Math.sin(y*GCJ_PI) + 40*Math.sin(y/3*GCJ_PI)) * 2/3
+  t += (160*Math.sin(y/12*GCJ_PI) + 320*Math.sin(y*GCJ_PI/30)) * 2/3
+  return t
+}
+function gcjTransformLon(x, y) {
+  let t = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x))
+  t += (20*Math.sin(6*x*GCJ_PI) + 20*Math.sin(2*x*GCJ_PI)) * 2/3
+  t += (20*Math.sin(x*GCJ_PI) + 40*Math.sin(x/3*GCJ_PI)) * 2/3
+  t += (150*Math.sin(x/12*GCJ_PI) + 300*Math.sin(x/30*GCJ_PI)) * 2/3
+  return t
+}
+function wgs2gcj(wgsLat, wgsLng) {
+  if (isOutOfChina(wgsLat, wgsLng)) return [wgsLat, wgsLng]
+  let dLat = gcjTransformLat(wgsLng - 105, wgsLat - 35)
+  let dLng = gcjTransformLon(wgsLng - 105, wgsLat - 35)
+  const radLat = wgsLat / 180 * GCJ_PI
+  let magic = Math.sin(radLat)
+  magic = 1 - GCJ_EE * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  dLat = (dLat * 180) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * GCJ_PI)
+  dLng = (dLng * 180) / (GCJ_A / sqrtMagic * Math.cos(radLat) * GCJ_PI)
+  return [wgsLat + dLat, wgsLng + dLng]
+}
 
 const ACCT_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e']
 const COLOR_DIM = 0.4
 
 let trailLines = [], dotMarkers = [], lastTotalCount = -1
 let selectedPhone = null
+let markersByKey = new Map(), dateFrom = null, dateTo = null
 
 // map from phone -> index
 function acctColor(phone, accounts) {
@@ -92,6 +142,7 @@ function dimColor(hex) {
 function clearLayers() {
   trailLines.forEach(l => map.removeLayer(l)); trailLines = []
   dotMarkers.forEach(m => map.removeLayer(m)); dotMarkers = []
+  markersByKey = new Map()
 }
 
 function formatTime(iso) {
@@ -125,7 +176,7 @@ function renderAll(accounts) {
     const color = acctColor(acct.phone, accounts)
 
     // trail line
-    const coords = raw.map(d => [d.lat, d.lng])
+    const coords = raw.map(d => wgs2gcj(d.lat, d.lng))
     const line = L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map)
     trailLines.push(line)
     allBounds.push(...coords)
@@ -135,7 +186,8 @@ function renderAll(accounts) {
       const isLatest = i === raw.length - 1
       const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
       const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
-      const m = L.circleMarker([d.lat, d.lng], {
+      const gcj = wgs2gcj(d.lat, d.lng)
+      const m = L.circleMarker(gcj, {
         radius: isLatest ? 7 : 5,
         color: isLatest ? color : dimColor(color),
         fillColor: isLatest ? color : dimColor(color),
@@ -143,10 +195,12 @@ function renderAll(accounts) {
         weight: isLatest ? 2 : 1,
       }).addTo(map)
       m.bindPopup(`<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${formatTime(d.timestamp)}</strong><br>
-        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)}<br>
+        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
         精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
-        ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}`)
+        ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
+        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint('${d.account}','${d.timestamp}')">删除此点</button>`)
       dotMarkers.push(m)
+      markersByKey.set(d.account + '|' + d.timestamp, m)
     })
   }
 
@@ -190,12 +244,71 @@ function renderAll(accounts) {
   if (allBounds.length > 0) {
     map.fitBounds(L.latLngBounds(allBounds).pad(0.15))
   }
+
+  renderPointList(selected)
 }
 
 function switchAccount(phone) {
   selectedPhone = phone
-  // re-render from cached accounts data
   if (window._cachedAccounts) renderAll(window._cachedAccounts)
+}
+
+async function deletePoint(account, timestamp) {
+  if (!confirm('确定删除此点位？')) return
+  try {
+    const resp = await fetch(`/api/record?account=${encodeURIComponent(account)}&timestamp=${encodeURIComponent(timestamp)}`, { method: 'DELETE' })
+    const r = await resp.json()
+    if (r.ok) {
+      toast('已删除')
+      await load()
+    } else {
+      toast('删除失败: ' + (r.error || ''), 3000)
+    }
+  } catch(e) {
+    toast('删除请求失败', 3000)
+  }
+}
+
+async function deleteLatest() {
+  const acct = window._cachedAccounts?.find(a => a.phone === selectedPhone)
+  if (!acct || acct.records.length === 0) return
+  const last = acct.records[acct.records.length - 1]
+  await deletePoint(last.account || selectedPhone, last.timestamp)
+}
+
+function applyFilter() {
+  const fromVal = document.getElementById('filterFrom').value
+  const toVal = document.getElementById('filterTo').value
+  dateFrom = fromVal ? new Date(fromVal) : null
+  dateTo = toVal ? new Date(toVal) : null
+  if (window._cachedAccounts) renderAll(window._cachedAccounts)
+}
+
+function jumpToPoint(account, lat, lng, timestamp) {
+  selectedPhone = account
+  const gcj = wgs2gcj(lat, lng)
+  map.setView(gcj, 18)
+  const m = markersByKey.get(account + '|' + timestamp)
+  if (m) setTimeout(() => m.openPopup(), 100)
+}
+
+function renderPointList(selected) {
+  const el = document.getElementById('pointList')
+  if (!selected || selected.records.length === 0) { el.innerHTML = ''; return }
+  let records = selected.records
+  if (dateFrom) records = records.filter(r => new Date(r.timestamp) >= dateFrom)
+  if (dateTo) records = records.filter(r => new Date(r.timestamp) <= dateTo)
+  let html = '<div style="font-weight:600;font-size:12px;margin:4px 0;color:#555">点位列表</div>'
+  for (let i = records.length - 1; i >= 0; i--) {
+    const d = records[i]
+    const t = formatTime(d.timestamp)
+    const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
+    html += `<div class="point-item" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${d.timestamp}')">
+      <div class="pt-time">${t}</div>
+      <div class="pt-addr">${addr}</div>
+    </div>`
+  }
+  el.innerHTML = html
 }
 
 async function load() {
@@ -206,10 +319,35 @@ async function load() {
     const total = accts.reduce((s, a) => s + a.records.length, 0)
     if (total !== lastTotalCount) {
       lastTotalCount = total
+      // extend filter to include newest record
+      const newest = accts.reduce((latest, a) => {
+        const last = a.records[a.records.length - 1]
+        return last && (!latest || last.timestamp > latest.timestamp) ? last : latest
+      }, null)
+      if (newest) {
+        const t = new Date(newest.timestamp)
+        if (!dateTo || t > dateTo) {
+          dateTo = t
+          document.getElementById('filterTo').value = toLocalDateTimeStr(t)
+        }
+      }
       renderAll(accts)
     }
   } catch {}
 }
+
+function toLocalDateTimeStr(date) {
+  const pad = n => n.toString().padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// init filter defaults
+const now = new Date()
+const yesterday = new Date(now.getTime() - 86400000)
+document.getElementById('filterFrom').value = toLocalDateTimeStr(yesterday)
+document.getElementById('filterTo').value = toLocalDateTimeStr(now)
+dateFrom = yesterday
+dateTo = now
 
 async function doLocate() {
   const btn = document.getElementById('btnLocate')
@@ -221,6 +359,12 @@ async function doLocate() {
     const result = await resp.json()
     if (result.ok) {
       toast(`定位成功: ${result.record.accountName} - ${result.record.address || result.record.lat+', '+result.record.lng}`)
+      // extend filter to include the new record
+      const t = new Date(result.record.timestamp)
+      if (!dateTo || t > dateTo) {
+        dateTo = t
+        document.getElementById('filterTo').value = toLocalDateTimeStr(t)
+      }
       await load()
     } else {
       toast(`定位失败: ${result.error}`, 3000)

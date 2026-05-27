@@ -1,7 +1,7 @@
 import { createServer } from 'http'
 import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
-import { loadRecords, appendRecord } from './location-store.js'
+import { loadRecords, appendRecord, deleteRecord } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
 import { loadAccounts } from './account-config.js'
 import {
@@ -249,6 +249,14 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
   if (url.pathname === '/api/record/stop' && req.method === 'POST') {
     stopRecording()
     return json(res, { ok: true })
+  }
+
+  if (url.pathname === '/api/record' && req.method === 'DELETE') {
+    const account = url.searchParams.get('account')
+    const timestamp = url.searchParams.get('timestamp')
+    if (!account || !timestamp) return json(res, { ok: false, error: '缺少 account 或 timestamp 参数' }, 400)
+    const result = deleteRecord(account, timestamp)
+    return json(res, result)
   }
 
   if (url.pathname === '/api/debug/expire-session' && req.method === 'POST') {
