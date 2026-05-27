@@ -32,11 +32,14 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:2000;background:rgba(0,0,0,.8);color:#fff;padding:8px 20px;border-radius:6px;font-size:13px;transition:opacity .3s;opacity:0;pointer-events:none}
 #toast.show{opacity:1}
 .leaflet-popup-content{margin:8px 12px;font-size:13px;line-height:1.6;min-width:180px}
+/* AMap 弹窗用 isCustom 完全自定义，无需覆盖默认样式 */
+.amap-info *{outline:none}
 .filter-row{display:flex;gap:4px;align-items:center;margin:4px 0;font-size:12px}
 .filter-row input{border:1px solid #ddd;border-radius:4px;padding:2px 6px;font-size:12px;flex:1;min-width:0}
 #pointList{margin-top:6px;max-height:220px;overflow-y:auto;font-size:12px}
 .point-item{cursor:pointer;padding:3px 6px;border-radius:4px;border-bottom:1px solid #eee}
 .point-item:hover{background:#e8f4fd}
+.point-item.active{background:#d4edda;font-weight:600}
 .point-item .pt-time{color:#333;font-weight:600;font-size:11px}
 .point-item .pt-addr{color:#888;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
@@ -44,7 +47,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 <body>
 <div id="map"></div>
 <div id="panel">
-  <h3>设备轨迹</h3>
+  <h3>设备轨迹 <span id="engLabel" style="font-weight:400;font-size:11px;color:#999"></span></h3>
   <div class="stat">账号: <span id="acctCount">0</span> | 总记录: <span id="totalCount">0</span></div>
   <div class="stat">全局状态: <span id="globalStatus">空闲</span></div>
   <div id="legend"></div>
@@ -82,17 +85,119 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
 </div>
 <div id="toast"></div>
 <script>
-const map = L.map('map').setView([20, 110], 3)
-L.tileLayer('https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-  attribution: '&copy; 高德地图',
-  subdomains: ['webrd01', 'webrd02', 'webrd03', 'webrd04'],
-  maxZoom: 18,
-}).addTo(map)
+// ===== AMap security config (plaintext mode) =====
+window._AMapSecurityConfig = { securityJsCode: 'd620b7194d70feed855125286200e9f1' }
+</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=5250f6cd9ae1ea3685c4b972ee5c2e3f"></script>
+<script>
+// ===== Map Engine Selection =====
+const MAP_ENGINE = new URLSearchParams(location.search).get('map') === 'amap' ? 'amap' : 'leaflet'
+document.getElementById('engLabel').textContent = '[' + MAP_ENGINE + ']'
 
-// WGS84 → GCJ-02 坐标转换（高德/火星坐标系）
-const GCJ_PI = 3.141592653589793
-const GCJ_A = 6378245.0
-const GCJ_EE = 0.00669342162296594323
+// ===== Map Abstraction Layer =====
+let map = null
+let tileLayerAdded = false
+
+function initMapFromBounds(allBounds) {
+  if (allBounds.length === 0) return
+  if (MAP_ENGINE === 'leaflet') {
+    map = L.map('map', { zoomControl: true })
+    // tiles added lazily in fitBounds
+  } else {
+    const minLat = Math.min(...allBounds.map(p => p[0]))
+    const maxLat = Math.max(...allBounds.map(p => p[0]))
+    const minLng = Math.min(...allBounds.map(p => p[1]))
+    const maxLng = Math.max(...allBounds.map(p => p[1]))
+    const lngSpan = maxLng - minLng
+    const latSpan = maxLat - minLat
+    const maxSpan = Math.max(latSpan, lngSpan / Math.cos((minLat + maxLat) / 2 * Math.PI / 180))
+    const zoom = Math.max(7, Math.min(18, Math.round(14 - Math.log2(Math.max(maxSpan, 0.0001) / 0.5))))
+    map = new AMap.Map('map', {
+      center: [(minLng + maxLng) / 2, (minLat + maxLat) / 2],
+      zoom, viewMode: '2D',
+    })
+  }
+}
+
+const Eng = MAP_ENGINE === 'leaflet' ? {
+  pos: (p) => p,
+  remove: (layer) => { if (map) map.removeLayer(layer) },
+  polyline: (coords, color) =>
+    L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map),
+  circleMarker: (gcj, opts, popupHtml) => {
+    const m = L.circleMarker(gcj, {
+      radius: opts.radius, color: opts.color, fillColor: opts.fillColor,
+      fillOpacity: opts.fillOpacity, weight: opts.weight,
+    }).addTo(map)
+    m.bindPopup(popupHtml)
+    return m
+  },
+  fitBounds: (allBounds) => {
+    if (allBounds.length === 0) return
+    if (!tileLayerAdded) {
+      L.tileLayer('https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        attribution: '&copy; 高德地图',
+        subdomains: ['webrd01', 'webrd02', 'webrd03', 'webrd04'],
+        maxZoom: 18,
+      }).addTo(map)
+      tileLayerAdded = true
+    }
+    map.fitBounds(L.latLngBounds(allBounds).pad(0.15))
+  },
+  setView: (gcj, zoom) => { if (map) map.setView(gcj, zoom) },
+  openPopup: (marker) => { marker.openPopup() },
+  jumpToPoint: (account, lat, lng, timestamp) => {
+    const gcj = wgs2gcj(lat, lng)
+    map.setView(gcj, 18)
+    const m = markersByKey.get(account + '|' + timestamp)
+    if (m) setTimeout(() => m.openPopup(), 100)
+  },
+} : {
+  pos: (p) => [p[1], p[0]],
+  remove: (layer) => { if (map) map.remove(layer) },
+  polyline: (coords, color) => {
+    const line = new AMap.Polyline({
+      path: coords.map(c => [c[1], c[0]]),
+      strokeColor: color, strokeWeight: 3, strokeOpacity: 0.8,
+    })
+    map.add(line)
+    return line
+  },
+  circleMarker: (gcj, opts, popupHtml) => {
+    const center = [gcj[1], gcj[0]]
+    const size = opts.radius * 2
+    const marker = new AMap.Marker({
+      position: center,
+      content: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${opts.fillColor};border:${opts.weight}px solid ${opts.color};opacity:${opts.fillOpacity};box-sizing:border-box"></div>`,
+      offset: new AMap.Pixel(-opts.radius, -opts.radius),
+    })
+    map.add(marker)
+    const info = new AMap.InfoWindow({ isCustom: true, offset: [0, -20] })
+    const wrap = document.createElement('div')
+    wrap.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 3px 14px rgba(0,0,0,.3);padding:8px 12px;font-size:13px;line-height:1.6;min-width:180px;position:relative">${popupHtml}<span style="position:absolute;right:8px;top:6px;color:#888;font:bold 16px/1 Tahoma,sans-serif;cursor:pointer;z-index:1">×</span></div><div style="position:relative;width:0;height:0;margin:0 auto"><div style="position:absolute;left:50%;top:0;margin-left:-13px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:13px solid rgba(0,0,0,.07);pointer-events:none"></div><div style="position:absolute;left:50%;top:0;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:12px solid #fff;pointer-events:none"></div></div>`
+    wrap.querySelector('span').onclick = () => info.close()
+    info.setContent(wrap)
+    marker.on('click', () => info.open(map, center))
+    marker._info = info
+    return marker
+  },
+  fitBounds: (_allBounds) => {
+    // no-op: map was already created at the correct zoom in initMapFromBounds
+  },
+  setView: (gcj, zoom) => { if (map) map.setZoomAndCenter(zoom, [gcj[1], gcj[0]]) },
+  openPopup: (marker) => {
+    if (marker._info) marker._info.open(map, marker.getPosition())
+  },
+  jumpToPoint: (account, lat, lng, timestamp) => {
+    const gcj = wgs2gcj(lat, lng)
+    map.setZoomAndCenter(18, [gcj[1], gcj[0]])
+    const m = markersByKey.get(account + '|' + timestamp)
+    if (m) setTimeout(() => Eng.openPopup(m), 100)
+  },
+}
+
+// ===== WGS84 → GCJ-02 =====
+const GCJ_PI = 3.141592653589793, GCJ_A = 6378245.0, GCJ_EE = 0.00669342162296594323
 function isOutOfChina(lat, lng) { return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271 }
 function gcjTransformLat(x, y) {
   let t = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x))
@@ -121,45 +226,39 @@ function wgs2gcj(wgsLat, wgsLng) {
   return [wgsLat + dLat, wgsLng + dLng]
 }
 
+// ===== Constants & State =====
 const ACCT_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e']
 const COLOR_DIM = 0.4
-
 let trailLines = [], dotMarkers = [], lastTotalCount = -1
 let selectedPhone = null
 let markersByKey = new Map(), dateFrom = null, dateTo = null
 
-// map from phone -> index
 function acctColor(phone, accounts) {
   const idx = accounts.findIndex(a => a.phone === phone)
   return ACCT_COLORS[idx >= 0 ? idx % ACCT_COLORS.length : 0]
 }
-
 function dimColor(hex) {
   const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16)
   return `rgba(${r},${g},${b},${COLOR_DIM})`
 }
-
-function clearLayers() {
-  trailLines.forEach(l => map.removeLayer(l)); trailLines = []
-  dotMarkers.forEach(m => map.removeLayer(m)); dotMarkers = []
-  markersByKey = new Map()
-}
-
 function formatTime(iso) {
   if (!iso) return '-'
   const d = new Date(iso)
   return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 }
 
+function clearLayers() {
+  trailLines.forEach(l => Eng.remove(l)); trailLines = []
+  dotMarkers.forEach(m => Eng.remove(m)); dotMarkers = []
+  markersByKey = new Map()
+}
+
 function renderAll(accounts) {
-  clearLayers()
   const total = accounts.reduce((s, a) => s + a.records.length, 0)
   document.getElementById('acctCount').textContent = accounts.length
   document.getElementById('totalCount').textContent = total
 
-  // figure out which account detail to show
   if (!selectedPhone || !accounts.find(a => a.phone === selectedPhone)) {
-    // pick the one with the most recent record
     let latest = null
     for (const a of accounts) {
       if (a.lastUpdate && (!latest || a.lastUpdate > latest.lastUpdate)) latest = a
@@ -168,37 +267,53 @@ function renderAll(accounts) {
   }
   const selected = accounts.find(a => a.phone === selectedPhone)
 
-  // render each account
+  function inRange(r) {
+    const t = new Date(r.timestamp)
+    if (dateFrom && t < dateFrom) return false
+    if (dateTo && t > dateTo) return false
+    return true
+  }
+
+  // compute bounds from in-range records only
   const allBounds = []
   for (const acct of accounts) {
-    const raw = acct.records
+    for (const d of acct.records) {
+      if (!inRange(d)) continue
+      allBounds.push(wgs2gcj(d.lat, d.lng))
+    }
+  }
+
+  // init map lazily — no intermediate zoom-3 flash
+  if (!map) initMapFromBounds(allBounds)
+
+  clearLayers()
+
+  for (const acct of accounts) {
+    const raw = acct.records.filter(inRange)
     if (raw.length === 0) continue
     const color = acctColor(acct.phone, accounts)
 
-    // trail line
     const coords = raw.map(d => wgs2gcj(d.lat, d.lng))
-    const line = L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map)
+    const line = Eng.polyline(coords, color)
     trailLines.push(line)
-    allBounds.push(...coords)
 
-    // dots
     raw.forEach((d, i) => {
       const isLatest = i === raw.length - 1
       const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
       const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
       const gcj = wgs2gcj(d.lat, d.lng)
-      const m = L.circleMarker(gcj, {
+      const popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${formatTime(d.timestamp)}</strong><br>
+        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
+        精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
+        ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
+        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint('${d.account}','${d.timestamp}')">删除此点</button>`
+      const m = Eng.circleMarker(gcj, {
         radius: isLatest ? 7 : 5,
         color: isLatest ? color : dimColor(color),
         fillColor: isLatest ? color : dimColor(color),
         fillOpacity: isLatest ? 0.9 : 0.7,
         weight: isLatest ? 2 : 1,
-      }).addTo(map)
-      m.bindPopup(`<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${formatTime(d.timestamp)}</strong><br>
-        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
-        精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
-        ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
-        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint('${d.account}','${d.timestamp}')">删除此点</button>`)
+      }, popupHtml)
       dotMarkers.push(m)
       markersByKey.set(d.account + '|' + d.timestamp, m)
     })
@@ -240,9 +355,8 @@ function renderAll(accounts) {
     document.getElementById('detail').style.display = 'none'
   }
 
-  // fit bounds
   if (allBounds.length > 0) {
-    map.fitBounds(L.latLngBounds(allBounds).pad(0.15))
+    Eng.fitBounds(allBounds)
   }
 
   renderPointList(selected)
@@ -258,22 +372,9 @@ async function deletePoint(account, timestamp) {
   try {
     const resp = await fetch(`/api/record?account=${encodeURIComponent(account)}&timestamp=${encodeURIComponent(timestamp)}`, { method: 'DELETE' })
     const r = await resp.json()
-    if (r.ok) {
-      toast('已删除')
-      await load()
-    } else {
-      toast('删除失败: ' + (r.error || ''), 3000)
-    }
-  } catch(e) {
-    toast('删除请求失败', 3000)
-  }
-}
-
-async function deleteLatest() {
-  const acct = window._cachedAccounts?.find(a => a.phone === selectedPhone)
-  if (!acct || acct.records.length === 0) return
-  const last = acct.records[acct.records.length - 1]
-  await deletePoint(last.account || selectedPhone, last.timestamp)
+    if (r.ok) { toast('已删除'); await load() }
+    else { toast('删除失败: ' + (r.error || ''), 3000) }
+  } catch(e) { toast('删除请求失败', 3000) }
 }
 
 function applyFilter() {
@@ -286,24 +387,34 @@ function applyFilter() {
 
 function jumpToPoint(account, lat, lng, timestamp) {
   selectedPhone = account
-  const gcj = wgs2gcj(lat, lng)
-  map.setView(gcj, 18)
-  const m = markersByKey.get(account + '|' + timestamp)
-  if (m) setTimeout(() => m.openPopup(), 100)
+  Eng.jumpToPoint(account, lat, lng, timestamp)
+  // 高亮选择点
+  const prev = document.querySelector('.point-item.active')
+  if (prev) prev.classList.remove('active')
+  const cur = document.querySelector(`.point-item[data-key="${account}|${timestamp}"]`)
+  if (cur) cur.classList.add('active')
 }
 
 function renderPointList(selected) {
   const el = document.getElementById('pointList')
   if (!selected || selected.records.length === 0) { el.innerHTML = ''; return }
-  let records = selected.records
-  if (dateFrom) records = records.filter(r => new Date(r.timestamp) >= dateFrom)
-  if (dateTo) records = records.filter(r => new Date(r.timestamp) <= dateTo)
+  let records = selected.records.filter(r => {
+    const t = new Date(r.timestamp)
+    if (dateFrom && t < dateFrom) return false
+    if (dateTo && t > dateTo) return false
+    return true
+  })
   let html = '<div style="font-weight:600;font-size:12px;margin:4px 0;color:#555">点位列表</div>'
+  if (records.length === 0) {
+    html += '<div style="color:#999;font-size:12px;text-align:center;padding:12px 0">最近一天没有记录</div>'
+    el.innerHTML = html
+    return
+  }
   for (let i = records.length - 1; i >= 0; i--) {
     const d = records[i]
     const t = formatTime(d.timestamp)
     const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
-    html += `<div class="point-item" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${d.timestamp}')">
+    html += `<div class="point-item" data-key="${selected.phone}|${d.timestamp}" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${d.timestamp}')">
       <div class="pt-time">${t}</div>
       <div class="pt-addr">${addr}</div>
     </div>`
@@ -319,7 +430,6 @@ async function load() {
     const total = accts.reduce((s, a) => s + a.records.length, 0)
     if (total !== lastTotalCount) {
       lastTotalCount = total
-      // extend filter to include newest record
       const newest = accts.reduce((latest, a) => {
         const last = a.records[a.records.length - 1]
         return last && (!latest || last.timestamp > latest.timestamp) ? last : latest
@@ -359,7 +469,6 @@ async function doLocate() {
     const result = await resp.json()
     if (result.ok) {
       toast(`定位成功: ${result.record.accountName} - ${result.record.address || result.record.lat+', '+result.record.lng}`)
-      // extend filter to include the new record
       const t = new Date(result.record.timestamp)
       if (!dateTo || t > dateTo) {
         dateTo = t
@@ -369,9 +478,7 @@ async function doLocate() {
     } else {
       toast(`定位失败: ${result.error}`, 3000)
     }
-  } catch (e) {
-    toast('请求失败: '+e.message, 3000)
-  }
+  } catch (e) { toast('请求失败: '+e.message, 3000) }
   btn.disabled = false; btn.textContent = '单次定位'
   document.getElementById('globalStatus').textContent = '空闲'
 }

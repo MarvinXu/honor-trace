@@ -120,3 +120,23 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 所有文件统一双空格缩进
 - 异步函数使用 `async/await`
 - 不添加冗余注释
+
+## Progress
+
+### Done
+- **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
+- **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中
+- **修复 AMap isCustom InfoWindow 不弹窗 bug**: `jumpToPoint` 从依赖 `map.on('moveend')` 改为 `setTimeout(() => Eng.openPopup(m), 100)`，解决近距离点位切换时 `moveend` 不触发导致弹窗不显示的问题
+
+### In Progress
+- (none)
+
+### Blocked
+- (none)
+
+## Key Decisions
+- AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
+
+## Git 工作流
+
+- 每次提交前，先总结本次修改，并用该总结同步更新本文件（Progress / Key Decisions / Relevant Files 等章节），确保 AGENTS.md 始终反映最新状态

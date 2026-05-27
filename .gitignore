@@ -6,3 +6,6 @@ dist/
 accounts.json
 data/
 *.ps1
+
+test-*.png
+amap-popup.png
