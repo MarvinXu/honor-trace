@@ -15,7 +15,7 @@ src/
 ├── location-store.ts    位置数据本地 JSON 文件读写
 ├── types.ts             类型定义
 public/
-└── index.html           前端地图（Leaflet + OpenStreetMap，多账号颜色区分）
+└── index.html           前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选）
 ```
 
 ## 使用方式
@@ -38,9 +38,11 @@ pnpm run serve     # 启动 Web 服务（前端 + API）
 方式二（兼容）：使用环境变量 `HONOR_PHONE` + `HONOR_PASSWORD`（单账号）。
 
 前端页面 `http://localhost:3000` 显示多账号轨迹，每账号独立颜色：
-- **单次定位** — 立即定位第一个账号的对应设备
+- **单次定位** — 立即定位指定账号的对应设备
 - **开始录制** — 自动轮询所有账号（默认 300s 间隔）
 - **停止录制** — 停止轮询
+- **点位列表** — 按时间倒序显示当前账号点位，点击定位到地图
+- **日期筛选** — 按时间范围过滤点位，默认最近 24 小时
 
 ## 核心流程
 
@@ -94,6 +96,7 @@ session 过期自动检测 + 可配置重试：
 | POST | `/api/locate[?account=phone]` | 触发指定账号定位（默认第一个） |
 | POST | `/api/record/start` | 开始录制（轮询所有账号） |
 | POST | `/api/record/stop` | 停止录制 |
+| DELETE | `/api/record?account=&timestamp=` | 删除指定点位 |
 | POST | `/api/debug/expire-session[?account=phone]` | 强制 session 过期（测试用，默认所有） |
 
 ## 技术决策
@@ -105,7 +108,7 @@ session 过期自动检测 + 可配置重试：
 Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch` 发出。多账号时每账号独立缓存 session，互不干扰。
 
 ### 坐标系统
-荣耀 API 返回 WGS84 坐标，高德 regeo API 接受 WGS84（自动纠偏至 GCJ02）。前端地图使用 OpenStreetMap（WGS84），无需坐标转换。
+荣耀 API 返回 WGS84 坐标。前端使用高德瓦片（GCJ-02），前端渲染时实时转换 WGS84→GCJ-02 以确保标记与瓦片对齐。最大瓦片缩放 z=18。坐标若不转换会有约 500m 视觉偏移。
 
 ### 多账号配色
 前端预定义 8 色调色板，每账号按顺序分配独立颜色。轨迹线、标记点、图例统一使用该账号颜色。最新点以纯色大圆标记，历史点为半透明。
