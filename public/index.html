@@ -244,10 +244,12 @@ function dimColor(hex) {
 function formatTime(iso) {
   if (!iso) return '-'
   const d = new Date(iso)
-  return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+  return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
+function displayTime(r) { return formatTime(r.updatedAt || r.timestamp) }
 
 function clearLayers() {
+  dotMarkers.forEach(m => { if (m._info) m._info.close() })
   trailLines.forEach(l => Eng.remove(l)); trailLines = []
   dotMarkers.forEach(m => Eng.remove(m)); dotMarkers = []
   markersByKey = new Map()
@@ -302,7 +304,7 @@ function renderAll(accounts) {
       const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
       const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
       const gcj = wgs2gcj(d.lat, d.lng)
-      const popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${formatTime(d.timestamp)}</strong><br>
+      const popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${displayTime(d)}</strong><br>
         ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
         精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
         ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
@@ -349,7 +351,7 @@ function renderAll(accounts) {
     document.getElementById('detSim').textContent = last.simNo || '-'
     document.getElementById('detCarrier').textContent = last.carrier || '-'
     document.getElementById('detLock').textContent = last.isLockScreen || '-'
-    document.getElementById('detTime').textContent = formatTime(last.timestamp)
+    document.getElementById('detTime').textContent = displayTime(last)
     document.getElementById('detail').style.display = ''
   } else {
     document.getElementById('detail').style.display = 'none'
@@ -412,7 +414,7 @@ function renderPointList(selected) {
   }
   for (let i = records.length - 1; i >= 0; i--) {
     const d = records[i]
-    const t = formatTime(d.timestamp)
+    const t = displayTime(d)
     const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
     html += `<div class="point-item" data-key="${selected.phone}|${d.timestamp}" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${d.timestamp}')">
       <div class="pt-time">${t}</div>
@@ -446,8 +448,9 @@ async function load() {
   } catch {}
 }
 
+function pad(n) { return n.toString().padStart(2, '0') }
+
 function toLocalDateTimeStr(date) {
-  const pad = n => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 

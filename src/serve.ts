@@ -1,9 +1,10 @@
 import { createServer } from 'http'
 import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
-import { loadRecords, appendRecord, deleteRecord } from './location-store.js'
+import { loadRecords, appendRecord, deleteRecord, updateRecordTimestamp } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
 import { loadAccounts } from './account-config.js'
+import { shouldDedup } from './dedup.js'
 import {
   getMobileDeviceList, queryLocateResult, parseLocateInfo,
   regeoAddress, locateDevice, decodeNetworkType, decodeSignalStrength,
@@ -133,6 +134,11 @@ async function recordingTick(): Promise<void> {
       if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
         continue
       }
+      if (last && shouldDedup(last, result.record)) {
+        updateRecordTimestamp(acct.phone, 0, result.record.timestamp)
+        console.log(`  去重合并: ${acct.name} ${result.record.timestamp} (原有: ${last.timestamp})`)
+        continue
+      }
       appendRecord(result.record)
     }
   }
@@ -211,7 +217,7 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
         name: acct.name,
         records,
         isLocating: locatingFlags.get(acct.phone) || false,
-        lastUpdate: last?.timestamp || null,
+      lastUpdate: last?.updatedAt || last?.timestamp || null,
       }
     })
     return json(res, result)

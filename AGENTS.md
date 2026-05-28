@@ -124,6 +124,8 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ## Progress
 
 ### Done
+- **去重合并机制**: 新增 `src/dedup.ts`（Haversine + 可插拔规则），`LocationRecord.updatedAt` 字段，后端 `recordingTick` 集成去重，前端 `displayTime()` 显示 `updatedAt || timestamp`
+- **修复 `pad` 作用域 bug**: `pad()` 从 `toLocalDateTimeStr` 内部 `const` 提到顶层函数，`formatTime` 才能访问
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
 - **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中
 - **修复 AMap isCustom InfoWindow 不弹窗 bug**: `jumpToPoint` 从依赖 `map.on('moveend')` 改为 `setTimeout(() => Eng.openPopup(m), 100)`，解决近距离点位切换时 `moveend` 不触发导致弹窗不显示的问题

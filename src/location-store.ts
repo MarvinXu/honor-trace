@@ -42,6 +42,20 @@ export function deleteRecord(account: string, timestamp: string): { ok: boolean;
   console.log(`  已删除 ${account} ${timestamp}`)
   return { ok: true }
 }
+
+export function updateRecordTimestamp(account: string, index: number, timestamp: string): boolean {
+  const records = loadRecords()
+  const indices: number[] = []
+  for (let i = records.length - 1; i >= 0; i--) {
+    if (records[i].account === account) indices.push(i)
+  }
+  if (index < 0 || index >= indices.length) return false
+  const idx = indices[index]
+  records[idx].updatedAt = timestamp
+  writeFileSync(dataFile(), JSON.stringify(records, null, 2))
+  return true
+}
+
 export function getRecordCount(): number {
   return loadRecords().length
 }

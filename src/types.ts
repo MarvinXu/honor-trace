@@ -79,6 +79,7 @@ export interface LocateResponse {
 
 export interface LocationRecord {
   timestamp: string;
+  updatedAt?: string;
   lat: number;
   lng: number;
   accuracy: string;
