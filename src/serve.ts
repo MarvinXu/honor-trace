@@ -234,10 +234,16 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
 
   if (url.pathname === '/api/status') {
     const isAnyLocating = accountConfigs.some(a => locatingFlags.get(a.phone))
+    const allRecords = loadRecords()
+    const lastModified = allRecords.reduce((max, r) => {
+      const t = r.updatedAt || r.timestamp
+      return t > max ? t : max
+    }, '')
     return json(res, {
       recording: recordingTimer !== null,
       accounts: getAccountStatus(),
       isAnyLocating,
+      lastModified,
     })
   }
 

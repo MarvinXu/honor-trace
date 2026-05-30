@@ -515,7 +515,7 @@ function toast(msg, dur) {
   setTimeout(() => document.getElementById('toast').classList.remove('show'), dur || 2000)
 }
 
-let lastKnownTotal = -1
+let lastKnownModified = ''
 let statusPollTimer = null
 
 async function checkStatus() {
@@ -531,9 +531,8 @@ async function checkStatus() {
       document.getElementById('btnStop').style.display = 'none'
       if (!s.isAnyLocating) document.getElementById('globalStatus').textContent = '空闲'
     }
-    const total = s.accounts.reduce((sum, a) => sum + a.count, 0)
-    if (total !== lastKnownTotal) {
-      lastKnownTotal = total
+    if (s.lastModified !== lastKnownModified) {
+      lastKnownModified = s.lastModified
       load()
     }
   } catch {}
