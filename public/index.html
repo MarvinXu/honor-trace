@@ -122,14 +122,17 @@ function initMapFromBounds(allBounds) {
 
 const Eng = MAP_ENGINE === 'leaflet' ? {
   pos: (p) => p,
-  remove: (layer) => { if (map) map.removeLayer(layer) },
+  remove: (layer) => {
+    if (!map) return
+    if (Array.isArray(layer)) { layer.forEach(l => map.removeLayer(l)); return }
+    map.removeLayer(layer)
+  },
   polyline: (coords, color) => {
-    const line = L.polyline(coords, { color, weight: 3, opacity: 0.8 })
+    const line = L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map)
     const decorator = L.polylineDecorator(line, {
       patterns: [{ offset: 30, repeat: 100, symbol: L.Symbol.arrowHead({ pixelSize: 10, polygon: false, pathOptions: { color, weight: 2 } }) }]
-    })
-    const group = L.layerGroup([line, decorator]).addTo(map)
-    return group
+    }).addTo(map)
+    return [line, decorator]
   },
   circleMarker: (gcj, opts, popupHtml) => {
     const m = L.circleMarker(gcj, {
