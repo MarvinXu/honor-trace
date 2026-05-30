@@ -6,6 +6,7 @@
 <title>设备移动轨迹</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.polyline.decorator@1.6.0/dist/leaflet.polyline.decorator.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -91,7 +92,7 @@ window._AMapSecurityConfig = { securityJsCode: 'd620b7194d70feed855125286200e9f1
 <script src="https://webapi.amap.com/maps?v=2.0&key=5250f6cd9ae1ea3685c4b972ee5c2e3f"></script>
 <script>
 // ===== Map Engine Selection =====
-const MAP_ENGINE = new URLSearchParams(location.search).get('map') === 'amap' ? 'amap' : 'leaflet'
+const MAP_ENGINE = new URLSearchParams(location.search).get('map') === 'leaflet' ? 'leaflet' : 'amap'
 document.getElementById('engLabel').textContent = '[' + MAP_ENGINE + ']'
 
 // ===== Map Abstraction Layer =====
@@ -122,8 +123,13 @@ function initMapFromBounds(allBounds) {
 const Eng = MAP_ENGINE === 'leaflet' ? {
   pos: (p) => p,
   remove: (layer) => { if (map) map.removeLayer(layer) },
-  polyline: (coords, color) =>
-    L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map),
+  polyline: (coords, color) => {
+    const line = L.polyline(coords, { color, weight: 3, opacity: 0.8 }).addTo(map)
+    L.polylineDecorator(line, {
+      patterns: [{ offset: 30, repeat: 100, symbol: L.Symbol.arrowHead({ pixelSize: 10, polygon: false, pathOptions: { color, weight: 2 } }) }]
+    })
+    return line
+  },
   circleMarker: (gcj, opts, popupHtml) => {
     const m = L.circleMarker(gcj, {
       radius: opts.radius, color: opts.color, fillColor: opts.fillColor,
@@ -159,6 +165,7 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
     const line = new AMap.Polyline({
       path: coords.map(c => [c[1], c[0]]),
       strokeColor: color, strokeWeight: 3, strokeOpacity: 0.8,
+      showDir: true, dirColor: color,
     })
     map.add(line)
     return line
