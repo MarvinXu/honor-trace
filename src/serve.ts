@@ -253,7 +253,16 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
     if (!acct) return json(res, { ok: false, error: '账号不存在' }, 404)
     const result = await doLocate(acct)
     if (result.ok && result.record) {
-      appendRecord(result.record)
+      const records = loadRecords()
+      const last = [...records].reverse().find(r => r.account === acct.phone)
+      if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
+        // skip
+      } else if (last && shouldDedup(last, result.record)) {
+        updateRecordTimestamp(acct.phone, 0, result.record.timestamp)
+        console.log(`  单次定位去重合并: ${acct.name}`)
+      } else {
+        appendRecord(result.record)
+      }
       return json(res, { ok: true, record: result.record })
     }
     return json(res, { ok: false, error: result.error })
