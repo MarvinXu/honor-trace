@@ -2,10 +2,9 @@ import type { LocationRecord } from './types.js'
 
 export interface DedupConfig {
   distanceMeters: number
-  batteryDropPct: number
 }
 
-const defaults: DedupConfig = { distanceMeters: 50, batteryDropPct: 2 }
+const defaults: DedupConfig = { distanceMeters: 50 }
 
 function haversineDist(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -18,15 +17,14 @@ function haversineDist(lat1: number, lng1: number, lat2: number, lng2: number): 
 
 export function shouldDedup(last: LocationRecord, next: LocationRecord, cfg?: Partial<DedupConfig>): boolean {
   const c = { ...defaults, ...cfg }
-  if (haversineDist(last.lat, last.lng, next.lat, next.lng) >= c.distanceMeters) return false
-  if (last.networkType !== next.networkType || last.networkName !== next.networkName || last.networkSignal !== next.networkSignal) return false
-  if (last.isCharging !== next.isCharging) return false
-  if (last.isLockScreen !== next.isLockScreen) return false
-  const lastBat = parseFloat(last.battery)
-  const nextBat = parseFloat(next.battery)
-  if (!isNaN(lastBat) && !isNaN(nextBat)) {
-    if (nextBat > lastBat) return false
-    if (lastBat - nextBat > c.batteryDropPct) return false
+
+  // 同一 WiFi → 室内静止，去漂移
+  if (last.networkType === 'WiFi' && next.networkType === 'WiFi' && last.networkName === next.networkName) {
+    if (last.isCharging !== next.isCharging || last.isLockScreen !== next.isLockScreen) return false
+    return true
   }
+
+  if (last.isCharging !== next.isCharging) return false
+  if (haversineDist(last.lat, last.lng, next.lat, next.lng) >= c.distanceMeters) return false
   return true
 }

@@ -129,6 +129,11 @@ async function recordingTick(): Promise<void> {
   for (const acct of accountConfigs) {
     const result = await doLocate(acct)
     if (result.ok && result.record) {
+      const acc = parseFloat(result.record.accuracy)
+      if (!isNaN(acc) && acc > 500) {
+        console.log(`  丢弃坏数据: ${acct.name} accuracy=${result.record.accuracy}m`)
+        continue
+      }
       const records = loadRecords()
       const last = [...records].reverse().find(r => r.account === acct.phone)
       if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {

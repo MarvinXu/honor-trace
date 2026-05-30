@@ -124,7 +124,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ## Progress
 
 ### Done
-- **去重合并机制**: 新增 `src/dedup.ts`（Haversine + 可插拔规则），`LocationRecord.updatedAt` 字段，后端 `recordingTick` 集成去重，前端 `displayTime()` 显示 `updatedAt || timestamp`
+- **去重机制重构**: 三层架构 — ① `accuracy > 500m` 直接丢弃坏数据 ② 同 WiFi 静止去漂移（充电/锁屏变化时保留）③ 非 WiFi 按距离+充电变化决策，移除原有的电池/信号强度判断
 - **修复 `pad` 作用域 bug**: `pad()` 从 `toLocalDateTimeStr` 内部 `const` 提到顶层函数，`formatTime` 才能访问
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
 - **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中
@@ -138,6 +138,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 
 ## Key Decisions
 - AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
+- 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 
 ## Git 工作流
 
