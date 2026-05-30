@@ -166,33 +166,14 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   pos: (p) => [p[1], p[0]],
   remove: (layer) => {
     if (!map) return
-    if (layer._arrows) { layer._arrows.forEach(a => map.remove(a)); layer._arrows = null }
     map.remove(layer)
   },
   polyline: (coords, color) => {
     const path = coords.map(c => [c[1], c[0]])
     const line = new AMap.Polyline({
-      path, strokeColor: color, strokeWeight: 3, strokeOpacity: 0.8,
+      path, strokeColor: color, strokeWeight: 5, strokeOpacity: 0.8, showDir: true,
     })
     map.add(line)
-    // 沿路径放置方向箭头
-    line._arrows = []
-    for (let i = 1; i < path.length; i++) {
-      const from = new AMap.LngLat(path[i-1][0], path[i-1][1])
-      const to = new AMap.LngLat(path[i][0], path[i][1])
-      if (from.distance(to) < 80) continue
-      const p1 = map.lngLatToContainer(from)
-      const p2 = map.lngLatToContainer(to)
-      const angle = Math.atan2(p2.x - p1.x, p1.y - p2.y) * 180 / Math.PI
-      const mid = [(from.getLng() + to.getLng()) / 2, (from.getLat() + to.getLat()) / 2]
-      const arrow = new AMap.Marker({
-        position: mid,
-        content: `<div style="width:0;height:0;border:5px solid transparent;border-bottom-color:${color};border-width:5px 7px 9px;transform:rotate(${angle}deg)"></div>`,
-        offset: new AMap.Pixel(-7, -5),
-      })
-      map.add(arrow)
-      line._arrows.push(arrow)
-    }
     return line
   },
   circleMarker: (gcj, opts, popupHtml) => {
