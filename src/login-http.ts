@@ -86,6 +86,13 @@ async function doLogin(phone: string, password: string): Promise<Session> {
       await page.keyboard.press('Enter');
     }
 
+    // 协议更新弹窗（登录后可能需要同意新协议）
+    try {
+      const agreeBtn = page.getByText('同意').last();
+      await agreeBtn.waitFor({ state: 'visible', timeout: 5000 });
+      await agreeBtn.click();
+    } catch { /* 无弹窗 */ }
+
     await page.waitForURL('**/webFindPhone.html**', { timeout: 30000 });
 
     const cookies = await context.cookies();

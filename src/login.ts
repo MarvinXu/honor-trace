@@ -56,13 +56,25 @@ export async function login(
   // 方式1: 按 Enter 提交（最可靠）
   await pwdInput.press('Enter');
 
+  // 协议更新弹窗（登录后可能需要同意新协议）
+  async function handleAgreement() {
+    try {
+      const agreeBtn = page.getByText('同意').last();
+      await agreeBtn.waitFor({ state: 'visible', timeout: 5000 });
+      await agreeBtn.click();
+    } catch { /* 无弹窗 */ }
+  }
+
+  await handleAgreement();
+
   // 等待跳转到查找设备主页
   try {
     await page.waitForURL('**/webFindPhone.html**', { timeout: 15000 });
   } catch {
     // Enter 没生效，尝试点击按钮
-    const loginBtn = page.locator('button:has-text("登录")');
+    const loginBtn = page.locator('span:has-text("登录")').last();
     await loginBtn.click();
+    await handleAgreement();
     await page.waitForURL('**/webFindPhone.html**', { timeout: 15000 });
   }
 

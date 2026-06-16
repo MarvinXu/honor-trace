@@ -158,7 +158,7 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   openPopup: (marker) => { marker.openPopup() },
   jumpToPoint: (account, lat, lng, timestamp) => {
     const gcj = wgs2gcj(lat, lng)
-    map.setView(gcj, 18)
+    map.setView(gcj, 18, { animate: false })
     const m = markersByKey.get(account + '|' + timestamp)
     if (m) setTimeout(() => m.openPopup(), 100)
   },
@@ -203,7 +203,7 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   },
   jumpToPoint: (account, lat, lng, timestamp) => {
     const gcj = wgs2gcj(lat, lng)
-    map.setZoomAndCenter(18, [gcj[1], gcj[0]])
+    map.setZoomAndCenter(18, [gcj[1], gcj[0]], true)
     const m = markersByKey.get(account + '|' + timestamp)
     if (m) setTimeout(() => Eng.openPopup(m), 100)
   },

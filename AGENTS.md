@@ -129,6 +129,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
 - **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中
 - **修复 AMap isCustom InfoWindow 不弹窗 bug**: `jumpToPoint` 从依赖 `map.on('moveend')` 改为 `setTimeout(() => Eng.openPopup(m), 100)`，解决近距离点位切换时 `moveend` 不触发导致弹窗不显示的问题
+- **登录流程适配协议弹窗**: 荣耀登录页面新增协议更新弹窗（remoteLogin 返回 `need to agree agreement`），在 `login-http.ts:89` 和 `login.ts:59-68` 添加弹窗检测/点击逻辑，兼容无弹窗场景
 
 ### In Progress
 - (none)
@@ -139,6 +140,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ## Key Decisions
 - AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
+- 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 
 ## Git 工作流
 
