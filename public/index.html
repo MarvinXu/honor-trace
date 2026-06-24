@@ -245,6 +245,7 @@ const COLOR_DIM = 0.4
 let trailLines = [], dotMarkers = [], lastTotalCount = -1
 let selectedPhone = null
 let markersByKey = new Map(), dateFrom = null, dateTo = null
+let activePointKey = ''
 
 function acctColor(phone, accounts) {
   const idx = accounts.findIndex(a => a.phone === phone)
@@ -375,11 +376,15 @@ function renderAll(accounts) {
   }
 
   renderPointList(selected)
+  highlightPoint()
 }
 
 function switchAccount(phone) {
   selectedPhone = phone
-  if (window._cachedAccounts) renderAll(window._cachedAccounts)
+  localStorage.setItem('selectedPhone', phone)
+  if (!window._cachedAccounts) return
+  renderAll(window._cachedAccounts)
+  autoSelectLatest()
 }
 
 async function deletePoint(account, timestamp) {
@@ -402,11 +407,17 @@ function applyFilter() {
 
 function jumpToPoint(account, lat, lng, timestamp) {
   selectedPhone = account
+  localStorage.setItem('selectedPhone', account)
+  activePointKey = account + '|' + timestamp
   Eng.jumpToPoint(account, lat, lng, timestamp)
-  // 高亮选择点
+  highlightPoint()
+}
+
+function highlightPoint() {
   const prev = document.querySelector('.point-item.active')
   if (prev) prev.classList.remove('active')
-  const cur = document.querySelector(`.point-item[data-key="${account}|${timestamp}"]`)
+  if (!activePointKey) return
+  const cur = document.querySelector(`.point-item[data-key="${activePointKey}"]`)
   if (cur) cur.classList.add('active')
 }
 
@@ -551,9 +562,43 @@ async function checkStatus() {
   } catch {}
 }
 
+const saved = localStorage.getItem('selectedPhone')
+if (saved) selectedPhone = saved
+
+async function autoLocate() {
+  const noData = (window._cachedAccounts || []).filter(a =>
+    !a.records.some(r => {
+      const t = new Date(r.timestamp)
+      return (!dateFrom || t >= dateFrom) && (!dateTo || t <= dateTo)
+    })
+  )
+  if (noData.length === 0) return
+  for (const a of noData) {
+    if (a.phone === selectedPhone) {
+      await doLocate()
+    } else {
+      try {
+        await fetch('/api/locate?account=' + encodeURIComponent(a.phone), { method: 'POST' })
+      } catch {}
+    }
+  }
+  if (!noData.some(a => a.phone === selectedPhone)) {
+    await load()
+  }
+}
+
+function autoSelectLatest() {
+  const acct = (window._cachedAccounts || []).find(a => a.phone === selectedPhone)
+  const last = acct?.records?.[acct.records.length - 1]
+  if (last) jumpToPoint(selectedPhone, last.lat, last.lng, last.timestamp)
+}
+
 statusPollTimer = setInterval(checkStatus, 5000)
 checkStatus()
-load()
+load().then(async () => {
+  await autoLocate()
+  autoSelectLatest()
+})
 </script>
 </body>
 </html>
