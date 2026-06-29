@@ -1,0 +1,34 @@
+name: Login & Refresh Sessions
+on:
+  workflow_dispatch:
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run login
+        run: npx tsx scripts/gh-login.ts
+        env:
+          ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
+          CF_API_URL: ${{ secrets.CF_API_URL }}
+          CF_SESSION_KEY: ${{ secrets.CF_SESSION_KEY }}
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          curl -X POST "${{ secrets.CF_API_URL }}/api/session/failed" \
+            -H "Authorization: Bearer ${{ secrets.CF_SESSION_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"reason":"GitHub Action login failed"}'

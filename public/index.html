@@ -502,6 +502,13 @@ async function doLocate() {
   try {
     const resp = await fetch('/api/locate?account=' + encodeURIComponent(phone), { method: 'POST' })
     const result = await resp.json()
+    if (result.error === 'session_expired') {
+      toast('登录过期，后台正在刷新，60秒后自动重试', 3000)
+      setTimeout(() => doLocate(), (result.retryAfter || 60) * 1000)
+      btn.disabled = false; btn.textContent = '单次定位'
+      document.getElementById('globalStatus').textContent = '空闲'
+      return
+    }
     if (result.ok) {
       toast(`定位成功: ${result.record.accountName} - ${result.record.address || result.record.lat+', '+result.record.lng}`)
       const t = new Date(result.record.timestamp)

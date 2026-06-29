@@ -13,10 +13,29 @@ src/
 ├── login-http.ts        混合登录（Playwright 登录后用 HTTP 保持 session）
 ├── api.ts               荣耀查找设备 HTTP API 封装
 ├── location-store.ts    位置数据本地 JSON 文件读写（支持自增 id）
+├── locate-common.ts     共享定位逻辑（给 serve + CF Functions 共用）
 ├── logger.ts            结构化日志工具（级别/模块/traceId）
 ├── types.ts             类型定义
+├── dedup.ts             去重逻辑
+functions/api/            Cloudflare Pages Functions
+├── _middleware.ts        CORS 中间件
+├── session.ts            POST /api/session（接收 GH Action session）
+├── session/failed.ts     POST /api/session/failed（登录失败通知）
+├── locate.ts             POST /api/locate（定位 + 过期检测→触发 GH Action）
+├── accounts.ts           GET /api/accounts
+├── data.ts               GET /api/data
+├── status.ts             GET /api/status
+├── record.ts             DELETE /api/record
+├── record/start.ts       POST /api/record/start
+└── record/stop.ts        POST /api/record/stop
+worker-cron/
+└── index.ts              Cron Trigger Worker（*/5 * * * * 录制轮询）
+scripts/
+└── gh-login.ts           GitHub Action 登录脚本（Playwright → POST session）
 public/
-└── index.html           前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选）
+└── index.html            前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选）
+migrations/
+└── 0000_init.sql          D1 建表 SQL
 ```
 
 ## 使用方式
@@ -143,7 +162,17 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **记忆选中账号**: 使用 `localStorage` 持久化 `selectedPhone`，刷新页面后恢复上次选中的账号
 
 ### In Progress
-- (none)
+- **Cloudflare 部署方案实现**:
+  - Cloudflare Pages + Functions + Chron Worker + D1 + KV 架构
+  - 登录与运行时解耦：GH Action 负责 Playwright 登录，POST session 到 `/api/session`
+  - session 过期检测 → 触发 GH Action（`workflow_dispatch`）刷新
+  - 前端录制开关控制 KV `recording:active`，Cron Worker 每 5 分钟轮询
+  - 新增 `src/locate-common.ts` 共享定位核心逻辑
+  - 新增 `functions/api/` 共 11 个 API endpoint 文件
+  - 新增 `worker-cron/index.ts` 定时录制 Worker
+  - 新增 `scripts/gh-login.ts` GH Action 登录脚本
+  - 新增 `wrangler.toml` / `wrangler-cron.toml` 配置
+  - 新增 `migrations/0000_init.sql` D1 表结构
 
 ### Blocked
 - (none)
@@ -157,4 +186,8 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 
 ## Git 工作流
 
-- 每次提交前，先总结本次修改，并用该总结同步更新本文件（Progress / Key Decisions / Relevant Files 等章节），确保 AGENTS.md 始终反映最新状态
+- 每次提交前，先总结本次修改，并用该总结同步更新本文件（Progress / Key Decisions 等章节），确保 AGENTS.md 始终反映最新状态
+- 提交信息使用 Conventional Commits 格式：`type(scope): description`
+  - type: `feat` / `fix` / `refactor` / `chore` / `docs` / `perf` / `test`
+  - scope: 可选，影响的模块名（如 `logger`、`store`、`frontend`）
+  - description: 中文，简述变更，首字母不大小写

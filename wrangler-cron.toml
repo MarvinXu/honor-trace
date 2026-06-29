@@ -1,0 +1,17 @@
+name = "honor-trace-cron"
+main = "worker-cron/index.ts"
+compatibility_date = "2024-12-01"
+
+[[kv_namespaces]]
+binding = "SESSION_KV"
+id = ""
+preview_id = ""
+
+[[d1_databases]]
+binding = "D1"
+database_name = "honor-trace"
+database_id = ""
+preview_database_id = ""
+
+[triggers]
+crons = ["*/5 * * * *"]
