@@ -4,14 +4,12 @@ compatibility_date = "2024-12-01"
 
 [[kv_namespaces]]
 binding = "SESSION_KV"
-id = ""
-preview_id = ""
+id = "72d967f100c7433495a0fcccee93936d"
 
 [[d1_databases]]
 binding = "D1"
 database_name = "honor-trace"
-database_id = ""
-preview_database_id = ""
+database_id = "8b9a4e64-6ab9-4474-996f-c68b906cf5d0"
 
 [triggers]
 crons = ["*/5 * * * *"]
