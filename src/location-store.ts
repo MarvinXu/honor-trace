@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import type { LocationRecord } from './types.js'
+import { logger } from './logger.js'
 
 function dataDir(): string {
   return process.env.DATA_DIR || join(process.cwd(), 'data')
@@ -8,6 +9,21 @@ function dataDir(): string {
 
 function dataFile(): string {
   return join(dataDir(), 'location-data.json')
+}
+
+function counterFile(): string {
+  return join(dataDir(), '.id-counter')
+}
+
+function nextId(): number {
+  const path = counterFile()
+  let id = 0
+  if (existsSync(path)) {
+    try { id = parseInt(readFileSync(path, 'utf-8').trim(), 10) || 0 } catch {}
+  }
+  id += 1
+  writeFileSync(path, String(id))
+  return id
 }
 
 export function loadRecords(): LocationRecord[] {
@@ -21,26 +37,44 @@ export function loadRecords(): LocationRecord[] {
 }
 
 export function appendRecord(record: LocationRecord): void {
+  record.id = nextId()
   const records = loadRecords()
   records.push(record)
   const dir = dataDir()
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(dataFile(), JSON.stringify(records, null, 2))
-  console.log(`  已保存到 ${dataFile()}`)
+  logger.info('store', `保存成功 id=${record.id}`, {
+    id: record.id, account: record.accountName, file: dataFile(),
+  })
 }
 
-export function deleteRecord(account: string, timestamp: string): { ok: boolean; error?: string } {
+export function deleteRecord(account: string, timestamp?: string, id?: number): { ok: boolean; error?: string; id?: number } {
   const records = loadRecords()
-  const idx = records.findIndex(r => r.account === account && r.timestamp === timestamp)
-  if (idx === -1) {
-    console.log(`  删除失败: 未找到 account="${account}" timestamp="${timestamp}"，共 ${records.length} 条记录`)
-    console.log(`  记录 account 示例: ${records.slice(0, 3).map(r => `"${r.account}":"${r.timestamp}"`).join(', ')}`)
-    return { ok: false, error: '未找到匹配的记录' }
+  let idx = -1
+  if (id !== undefined) {
+    idx = records.findIndex(r => r.id === id)
+    if (idx === -1) {
+      logger.warn('store', `删除失败 id=${id}`, { id, total: records.length })
+      return { ok: false, error: '未找到匹配的记录' }
+    }
+  } else if (timestamp) {
+    idx = records.findIndex(r => r.account === account && r.timestamp === timestamp)
+    if (idx === -1) {
+      logger.warn('store', `删除失败 account=${account} timestamp=${timestamp}`, {
+        account, timestamp, total: records.length,
+        sample: records.slice(0, 3).map(r => ({ account: r.account, ts: r.timestamp, id: r.id })),
+      })
+      return { ok: false, error: '未找到匹配的记录' }
+    }
+  } else {
+    return { ok: false, error: '缺少 id 或 timestamp 参数' }
   }
-  records.splice(idx, 1)
+  const removed = records.splice(idx, 1)[0]
   writeFileSync(dataFile(), JSON.stringify(records, null, 2))
-  console.log(`  已删除 ${account} ${timestamp}`)
-  return { ok: true }
+  logger.info('store', `已删除 id=${removed.id}`, {
+    id: removed.id, account: removed.accountName, timestamp: removed.timestamp,
+  })
+  return { ok: true, id: removed.id }
 }
 
 export function updateRecordTimestamp(account: string, index: number, timestamp: string): boolean {

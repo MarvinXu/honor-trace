@@ -9,12 +9,13 @@ import {
 } from './api.js'
 import type { Session } from './types.js'
 import { startServer } from './serve.js'
+import { logger } from './logger.js'
 
 function getCredentials() {
   const phone = process.env.HONOR_PHONE
   const password = process.env.HONOR_PASSWORD
   if (!phone || !password) {
-    console.error('请设置环境变量 HONOR_PHONE 和 HONOR_PASSWORD')
+    logger.error('main', '请设置环境变量 HONOR_PHONE 和 HONOR_PASSWORD')
     process.exit(1)
   }
   return { phone, password }
@@ -34,7 +35,7 @@ async function getSession(): Promise<Session> {
 
 async function modeOnce(): Promise<void> {
   const session = await getSession()
-  console.log(`登录成功, userid: ${session.userid}`)
+  logger.info('main', `登录成功`, { userid: session.userid })
 
   const deviceResp = await getMobileDeviceList(session)
   if (deviceResp.code !== '0' || !deviceResp.deviceList?.length) {
@@ -42,9 +43,9 @@ async function modeOnce(): Promise<void> {
   }
 
   const device = deviceResp.deviceList[0]
-  console.log(`设备: ${device.deviceAliasName} (${device.terminalType})`)
+  logger.info('main', `设备: ${device.deviceAliasName}`, { type: device.terminalType })
 
-  console.log('查询位置...')
+  logger.info('main', '查询位置...')
   const locateResp = await queryLocateResult(session, device)
   if (locateResp.code !== '0') {
     throw new Error('位置查询失败: ' + locateResp.info)
@@ -57,8 +58,10 @@ async function modeOnce(): Promise<void> {
     address = await regeoAddress(info.longitude_WGS, info.latitude_WGS, session.amapKey)
   }
 
-  console.log(`\n${device.deviceAliasName} | 在线 | ${address || '未知'}`)
-  console.log(`WGS84: ${info.latitude_WGS}, ${info.longitude_WGS} | 精度 ${info.accuracy}m | 电量 ${info.batteryStatus.percentage}%`)
+  logger.info('main', `${device.deviceAliasName} | 在线 | ${address || '未知'}`, {
+    lat: info.latitude_WGS, lng: info.longitude_WGS,
+    accuracy: info.accuracy, battery: info.batteryStatus.percentage,
+  })
 }
 
 async function main() {
@@ -76,6 +79,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('错误:', err.message)
+  logger.error('main', `错误: ${err.message}`)
   process.exit(1)
 })

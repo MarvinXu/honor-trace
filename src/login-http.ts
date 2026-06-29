@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { chromium } from 'playwright';
 import type { Session } from './types.js';
+import { logger } from './logger.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36';
 
@@ -123,15 +124,15 @@ async function doLogin(phone: string, password: string): Promise<Session> {
   }
 }
 
-export async function loginViaHttp(phone: string, password: string, cachePathOverride?: string): Promise<Session> {
+export async function loginViaHttp(phone: string, password: string, cachePathOverride?: string, traceId?: string): Promise<Session> {
   const cached = loadCachedSession(cachePathOverride || cachePath(phone))
   if (cached) {
     const valid = await testSession(cached)
     if (valid) {
-      console.log(`  使用缓存的 session (${phone})`)
+      logger.info('login', `使用缓存的 session`, { phone }, traceId)
       return cached
     }
-    console.log(`  session (${phone}) 已过期，重新登录`)
+    logger.info('login', `session 已过期，重新登录`, { phone }, traceId)
   }
 
   const session = await doLogin(phone, password)

@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import type { AccountConfig } from './types.js'
+import { logger } from './logger.js'
 
 export function loadAccounts(): AccountConfig[] {
   const configPath = join(process.cwd(), 'accounts.json')
@@ -15,7 +16,7 @@ export function loadAccounts(): AccountConfig[] {
         }))
       }
     } catch (e) {
-      console.error('accounts.json 解析失败:', e)
+      logger.error('config', 'accounts.json 解析失败')
     }
   }
 

@@ -156,10 +156,10 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   },
   setView: (gcj, zoom) => { if (map) map.setView(gcj, zoom) },
   openPopup: (marker) => { marker.openPopup() },
-  jumpToPoint: (account, lat, lng, timestamp) => {
+  jumpToPoint: (key, lat, lng) => {
     const gcj = wgs2gcj(lat, lng)
     map.setView(gcj, 18, { animate: false })
-    const m = markersByKey.get(account + '|' + timestamp)
+    const m = markersByKey.get(key)
     if (m) setTimeout(() => m.openPopup(), 100)
   },
 } : {
@@ -201,10 +201,10 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   openPopup: (marker) => {
     if (marker._info) marker._info.open(map, marker.getPosition())
   },
-  jumpToPoint: (account, lat, lng, timestamp) => {
+  jumpToPoint: (key, lat, lng) => {
     const gcj = wgs2gcj(lat, lng)
     map.setZoomAndCenter(18, [gcj[1], gcj[0]], true)
-    const m = markersByKey.get(account + '|' + timestamp)
+    const m = markersByKey.get(key)
     if (m) setTimeout(() => Eng.openPopup(m), 100)
   },
 }
@@ -246,6 +246,7 @@ let trailLines = [], dotMarkers = [], lastTotalCount = -1
 let selectedPhone = null
 let markersByKey = new Map(), dateFrom = null, dateTo = null
 let activePointKey = ''
+function recordKey(r) { return r.id ?? (r.account + '|' + r.timestamp) }
 
 function acctColor(phone, accounts) {
   const idx = accounts.findIndex(a => a.phone === phone)
@@ -322,7 +323,7 @@ function renderAll(accounts) {
         ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
         精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
         ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
-        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint('${d.account}','${d.timestamp}')">删除此点</button>`
+        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint(${d.id ?? `'${d.account}','${d.timestamp}'`})">删除此点</button>`
       const m = Eng.circleMarker(gcj, {
         radius: isLatest ? 7 : 5,
         color: isLatest ? color : dimColor(color),
@@ -331,7 +332,7 @@ function renderAll(accounts) {
         weight: isLatest ? 2 : 1,
       }, popupHtml)
       dotMarkers.push(m)
-      markersByKey.set(d.account + '|' + d.timestamp, m)
+      markersByKey.set(recordKey(d), m)
     })
   }
 
@@ -387,10 +388,16 @@ function switchAccount(phone) {
   autoSelectLatest()
 }
 
-async function deletePoint(account, timestamp) {
+async function deletePoint(id, timestamp) {
   if (!confirm('确定删除此点位？')) return
   try {
-    const resp = await fetch(`/api/record?account=${encodeURIComponent(account)}&timestamp=${encodeURIComponent(timestamp)}`, { method: 'DELETE' })
+    let url
+    if (id !== undefined && id !== null) {
+      url = `/api/record?id=${encodeURIComponent(id)}`
+    } else {
+      url = `/api/record?account=${encodeURIComponent(selectedPhone)}&timestamp=${encodeURIComponent(timestamp)}`
+    }
+    const resp = await fetch(url, { method: 'DELETE' })
     const r = await resp.json()
     if (r.ok) { toast('已删除'); await load() }
     else { toast('删除失败: ' + (r.error || ''), 3000) }
@@ -405,11 +412,11 @@ function applyFilter() {
   if (window._cachedAccounts) renderAll(window._cachedAccounts)
 }
 
-function jumpToPoint(account, lat, lng, timestamp) {
+function jumpToPoint(account, lat, lng, key) {
   selectedPhone = account
   localStorage.setItem('selectedPhone', account)
-  activePointKey = account + '|' + timestamp
-  Eng.jumpToPoint(account, lat, lng, timestamp)
+  activePointKey = key
+  Eng.jumpToPoint(activePointKey, lat, lng)
   highlightPoint()
 }
 
@@ -440,7 +447,8 @@ function renderPointList(selected) {
     const d = records[i]
     const t = displayTime(d)
     const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
-    html += `<div class="point-item" data-key="${selected.phone}|${d.timestamp}" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${d.timestamp}')">
+    const key = recordKey(d)
+    html += `<div class="point-item" data-key="${key}" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${key}')">
       <div class="pt-time">${t}</div>
       <div class="pt-addr">${addr}</div>
     </div>`
@@ -590,7 +598,7 @@ async function autoLocate() {
 function autoSelectLatest() {
   const acct = (window._cachedAccounts || []).find(a => a.phone === selectedPhone)
   const last = acct?.records?.[acct.records.length - 1]
-  if (last) jumpToPoint(selectedPhone, last.lat, last.lng, last.timestamp)
+  if (last) jumpToPoint(selectedPhone, last.lat, last.lng, recordKey(last))
 }
 
 statusPollTimer = setInterval(checkStatus, 5000)

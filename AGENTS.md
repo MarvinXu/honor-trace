@@ -12,7 +12,8 @@ src/
 ├── login.ts             Playwright 浏览器登录（全浏览器模式）
 ├── login-http.ts        混合登录（Playwright 登录后用 HTTP 保持 session）
 ├── api.ts               荣耀查找设备 HTTP API 封装
-├── location-store.ts    位置数据本地 JSON 文件读写
+├── location-store.ts    位置数据本地 JSON 文件读写（支持自增 id）
+├── logger.ts            结构化日志工具（级别/模块/traceId）
 ├── types.ts             类型定义
 public/
 └── index.html           前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选）
@@ -85,6 +86,7 @@ session 过期自动检测 + 可配置重试：
 | `PORT` | `3000` | 前端服务端口 |
 | `SESSION_CACHE` | `.session-cache.json` | session 缓存路径（多账号时自动追加 -{phone}） |
 | `DATA_DIR` | `data` | 位置数据存储目录 |
+| `ACCURACY_THRESHOLD` | `5000` | 精度阈值（米），超过此值丢弃不保存 |
 
 ## API 接口
 
@@ -96,7 +98,7 @@ session 过期自动检测 + 可配置重试：
 | POST | `/api/locate[?account=phone]` | 触发指定账号定位（默认第一个） |
 | POST | `/api/record/start` | 开始录制（轮询所有账号） |
 | POST | `/api/record/stop` | 停止录制 |
-| DELETE | `/api/record?account=&timestamp=` | 删除指定点位 |
+| DELETE | `/api/record?id=` 或 `?account=&timestamp=` | 删除指定点位（优先 id） |
 | POST | `/api/debug/expire-session[?account=phone]` | 强制 session 过期（测试用，默认所有） |
 
 ## 技术决策
@@ -124,6 +126,12 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ## Progress
 
 ### Done
+- **日志方案统一**:
+  - 新增 `logger.ts` — 格式化输出 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`
+  - 全量替换 `console.log/error` 为 `logger.info/error/warn`
+  - API 请求自动生成 8 字符 traceId，可关联请求→定位→保存全链路
+  - 定位耗时、API 状态码、登录重试次数等均以结构化 JSON 记录
+- **LocationRecord 自增 id**: 新增 `id` 字段，`data/.id-counter` 文件维护计数器。前端 marker key / 删除接口全部切换为 `id`，向后兼容 `account+timestamp`
 - **去重机制重构**: 三层架构 — ① `accuracy > 500m` 直接丢弃坏数据 ② 同 WiFi 静止去漂移（充电/锁屏变化时保留）③ 非 WiFi 按距离+充电变化决策，移除原有的电池/信号强度判断
 - **修复 `pad` 作用域 bug**: `pad()` 从 `toLocalDateTimeStr` 内部 `const` 提到顶层函数，`formatTime` 才能访问
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
@@ -144,6 +152,8 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
+- `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
+- 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
 
 ## Git 工作流
 
