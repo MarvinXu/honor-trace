@@ -167,6 +167,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 
 - **CF Functions 去重合并未更新 timestamp**: `functions/api/locate.ts` 和 `worker-cron/index.ts` 的 `saveRecord` 在去重合并时只 SET `updated_at`，未 SET `timestamp`，导致前端按 `r.timestamp` 筛选时记录被过滤掉。改为同时更新两个字段
 - **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新
+- **`load()` 守卫导致合并后筛选时间不更新**: `load()` 的 `dateTo` 更新和 `renderAll` 都套在 `total !== lastTotalCount` 里，去重合并后总数不变导致 `dateTo` 不更新、重绘跳过。去掉守卫，每次 `load()` 都更新 `dateTo` 并重绘
 
 ### In Progress
 - **D1 请求日志**:

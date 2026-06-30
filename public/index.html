@@ -461,22 +461,19 @@ async function load() {
     const resp = await fetch('/api/accounts')
     const accts = await resp.json()
     window._cachedAccounts = accts
-    const total = accts.reduce((s, a) => s + a.records.length, 0)
-    if (total !== lastTotalCount) {
-      lastTotalCount = total
-      const newest = accts.reduce((latest, a) => {
-        const last = a.records[a.records.length - 1]
-        return last && (!latest || last.timestamp > latest.timestamp) ? last : latest
-      }, null)
-      if (newest) {
-        const t = new Date(newest.timestamp)
-        if (!dateTo || t > dateTo) {
-          dateTo = t
-          document.getElementById('filterTo').value = toLocalDateTimeStr(t)
-        }
+    lastTotalCount = accts.reduce((s, a) => s + a.records.length, 0)
+    const newest = accts.reduce((latest, a) => {
+      const last = a.records[a.records.length - 1]
+      return last && (!latest || last.timestamp > latest.timestamp) ? last : latest
+    }, null)
+    if (newest) {
+      const t = new Date(newest.timestamp)
+      if (!dateTo || t > dateTo) {
+        dateTo = t
+        document.getElementById('filterTo').value = toLocalDateTimeStr(t)
       }
-      renderAll(accts)
     }
+    renderAll(accts)
   } catch {}
 }
 
