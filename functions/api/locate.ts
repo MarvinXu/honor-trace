@@ -1,5 +1,6 @@
 import { doLocate, testSession } from '../../src/locate-common.js'
 import { shouldDedup } from '../../src/dedup.js'
+import { logD1 } from '../../src/logger-d1.js'
 import type { AccountConfig, LocationRecord } from '../../src/types.js'
 
 interface Env {
@@ -29,6 +30,7 @@ export async function onRequest(context: any): Promise<Response> {
 
   const sessionRaw = await env.SESSION_KV.get(`session:${acct.phone}`)
   if (!sessionRaw) {
+    await logD1(env.D1, 'WARN', 'locate', 'session 为空，触发登录', { account: acct.phone, name: acct.name })
     await maybeTriggerLogin(env)
     return json({ ok: false, error: 'session_expired', retryAfter: 60 })
   }
@@ -36,20 +38,28 @@ export async function onRequest(context: any): Promise<Response> {
   const session = JSON.parse(sessionRaw)
   const test = await testSession(session)
   if (test === 'expired') {
+    await logD1(env.D1, 'WARN', 'locate', 'session 已过期，触发登录', { account: acct.phone, name: acct.name })
     await maybeTriggerLogin(env)
     return json({ ok: false, error: 'session_expired', retryAfter: 60 })
   }
   if (test === 'error') {
+    await logD1(env.D1, 'ERROR', 'locate', 'session 测试网络错误', { account: acct.phone, name: acct.name })
     return json({ ok: false, error: '网络错误，请稍后重试' })
   }
 
   const threshold = parseInt(env.ACCURACY_THRESHOLD || '5000', 10)
   const result = await doLocate(acct, session, threshold)
   if (!result.ok) {
+    await logD1(env.D1, 'WARN', 'locate', result.error, { account: acct.phone, name: acct.name })
     return json(result)
   }
 
   await saveRecord(env, acct.phone, result.record)
+  await logD1(env.D1, 'INFO', 'locate', '定位成功', {
+    account: acct.phone, name: acct.name,
+    lat: result.record.lat, lng: result.record.lng, accuracy: result.record.accuracy,
+    networkType: result.record.networkType,
+  }, acct.phone)
   return json({ ok: true, record: result.record })
 }
 
@@ -61,6 +71,7 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
   if (last.results.length > 0) {
     const l = last.results[0]
     if (l.lat === record.lat && l.lng === record.lng && l.timestamp === record.timestamp) {
+      await logD1(env.D1, 'INFO', 'locate', '完全相同，跳过', { account, origId: l.id }, account)
       return
     }
     const lastRecord: LocationRecord = {
@@ -73,10 +84,12 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
       isLockScreen: l.is_lock_screen,
     } as any
     if (shouldDedup(lastRecord, record)) {
-      await env.D1.prepare('UPDATE location_records SET updated_at = ? WHERE id = ?')
-        .bind(record.timestamp, l.id).run()
+      await env.D1.prepare('UPDATE location_records SET timestamp = ?, updated_at = ? WHERE id = ?')
+        .bind(record.timestamp, record.timestamp, l.id).run()
+      await logD1(env.D1, 'INFO', 'locate', '去重合并', { account, origId: l.id }, account)
       return
     }
+    await logD1(env.D1, 'INFO', 'locate', '位置变化，新增记录', { account, origId: l.id }, account)
   }
 
   await env.D1.prepare(

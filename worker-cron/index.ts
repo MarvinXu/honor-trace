@@ -1,5 +1,6 @@
 import { doLocate, testSession } from '../src/locate-common.js'
 import { shouldDedup } from '../src/dedup.js'
+import { logD1 } from '../src/logger-d1.js'
 import type { LocationRecord } from '../src/types.js'
 
 interface Env {
@@ -23,31 +24,67 @@ export default {
     const threshold = parseInt(env.ACCURACY_THRESHOLD || '5000', 10)
     let triggered = false
 
+    let okCount = 0; let failCount = 0
     for (const acct of accounts) {
       const sessionRaw = await env.SESSION_KV.get(`session:${acct.phone}`)
       if (!sessionRaw) {
+        await logD1(env.D1, 'WARN', 'cron', 'session 为空，跳过', { account: acct.phone, name: acct.name })
         if (!triggered) { await maybeTriggerLogin(env); triggered = true }
+        failCount++
         continue
       }
 
       const session = JSON.parse(sessionRaw)
       const test = await testSession(session)
       if (test === 'expired') {
+        await logD1(env.D1, 'WARN', 'cron', 'session 已过期', { account: acct.phone, name: acct.name })
         if (!triggered) { await maybeTriggerLogin(env); triggered = true }
+        failCount++
         continue
       }
-      if (test === 'error') continue
+      if (test === 'error') {
+        await logD1(env.D1, 'ERROR', 'cron', 'session 测试网络错误', { account: acct.phone, name: acct.name })
+        failCount++
+        continue
+      }
 
       const result = await doLocate(
         { phone: acct.phone, password: '', name: acct.name },
         session,
         threshold,
       )
-      if (!result.ok) continue
+      if (!result.ok) {
+        await logD1(env.D1, 'WARN', 'cron', result.error, { account: acct.phone, name: acct.name })
+        failCount++
+        continue
+      }
 
       await saveRecord(env, acct.phone, result.record)
+      okCount++
+    }
+
+    await logD1(env.D1, 'INFO', 'cron', '录制轮询完成', { ok: okCount, fail: failCount, total: accounts.length })
+
+    if (okCount > 0 || failCount > 0) {
+      await cleanupLogs(env)
     }
   },
+}
+
+async function cleanupLogs(env: Env): Promise<void> {
+  const lastCleanup = await env.SESSION_KV.get('log-cleanup-date')
+  const today = new Date().toISOString().slice(0, 10)
+  if (lastCleanup === today) return
+
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+  try {
+    const result = await env.D1.prepare('DELETE FROM request_logs WHERE timestamp < ?').bind(weekAgo).run()
+    const deleted = (result as any).meta?.changes || 0
+    await env.SESSION_KV.put('log-cleanup-date', today)
+    await logD1(env.D1, 'INFO', 'cron', '日志清理完成', { deleted, olderThan: weekAgo })
+  } catch {
+    // cleanup must not break main flow
+  }
 }
 
 async function saveRecord(env: Env, account: string, record: LocationRecord): Promise<void> {
@@ -58,7 +95,10 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
   const results = (last as any).results || []
   if (results.length > 0) {
     const l = results[0]
-    if (l.lat === record.lat && l.lng === record.lng && l.timestamp === record.timestamp) return
+    if (l.lat === record.lat && l.lng === record.lng && l.timestamp === record.timestamp) {
+      await logD1(env.D1, 'INFO', 'cron', '完全相同，跳过', { account, origId: l.id })
+      return
+    }
 
     const lastRecord: LocationRecord = {
       lat: l.lat,
@@ -71,10 +111,12 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
     } as any
 
     if (shouldDedup(lastRecord, record)) {
-      await env.D1.prepare('UPDATE location_records SET updated_at = ? WHERE id = ?')
-        .bind(record.timestamp, l.id).run()
+      await env.D1.prepare('UPDATE location_records SET timestamp = ?, updated_at = ? WHERE id = ?')
+        .bind(record.timestamp, record.timestamp, l.id).run()
+      await logD1(env.D1, 'INFO', 'cron', '去重合并', { account, origId: l.id })
       return
     }
+    await logD1(env.D1, 'INFO', 'cron', '位置变化，新增记录', { account, origId: l.id })
   }
 
   await env.D1.prepare(

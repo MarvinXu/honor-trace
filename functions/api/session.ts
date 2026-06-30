@@ -1,7 +1,9 @@
 import type { Session } from '../../src/types.js'
+import { logD1 } from '../../src/logger-d1.js'
 
 interface Env {
   SESSION_KV: any
+  D1: any
   SESSION_API_KEY: string
 }
 
@@ -41,6 +43,7 @@ export async function onRequest(context: any): Promise<Response> {
   await env.SESSION_KV.put('accounts-list', JSON.stringify(accounts))
   await env.SESSION_KV.delete('login-in-progress')
 
+  await logD1(env.D1, 'INFO', 'session', '收到 GH Action session', { phone, name: name || phone.slice(-4), userid }, phone)
   return json({ ok: true })
 }
 

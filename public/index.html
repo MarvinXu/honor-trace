@@ -517,6 +517,7 @@ async function doLocate() {
         document.getElementById('filterTo').value = toLocalDateTimeStr(t)
       }
       await load()
+      if (window._cachedAccounts) renderAll(window._cachedAccounts)
     } else {
       toast(`定位失败: ${result.error}`, 3000)
     }

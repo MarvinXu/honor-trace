@@ -15,21 +15,25 @@ src/
 ├── location-store.ts    位置数据本地 JSON 文件读写（支持自增 id）
 ├── locate-common.ts     共享定位逻辑（给 serve + CF Functions 共用）
 ├── logger.ts            结构化日志工具（级别/模块/traceId）
+├── logger-d1.ts         D1 日志写入工具
 ├── types.ts             类型定义
 ├── dedup.ts             去重逻辑
 functions/api/            Cloudflare Pages Functions
 ├── _middleware.ts        CORS 中间件
 ├── session.ts            POST /api/session（接收 GH Action session）
 ├── session/failed.ts     POST /api/session/failed（登录失败通知）
-├── locate.ts             POST /api/locate（定位 + 过期检测→触发 GH Action）
+├── locate.ts             POST /api/locate（定位 + 过期检测→触发 GH Action + D1 日志）
 ├── accounts.ts           GET /api/accounts
 ├── data.ts               GET /api/data
 ├── status.ts             GET /api/status
-├── record.ts             DELETE /api/record
-├── record/start.ts       POST /api/record/start
-└── record/stop.ts        POST /api/record/stop
+├── record.ts             DELETE /api/record（+ D1 日志）
+├── record/start.ts       POST /api/record/start（+ D1 日志）
+└── record/stop.ts        POST /api/record/stop（+ D1 日志）
 worker-cron/
-└── index.ts              Cron Trigger Worker（*/5 * * * * 录制轮询）
+└── index.ts              Cron Trigger Worker（*/5 * * * * 录制轮询 + 日志清理）
+migrations/
+├── 0000_init.sql          D1 建表 SQL
+└── 0001_logs.sql          D1 request_logs 表
 scripts/
 └── gh-login.ts           GitHub Action 登录脚本（Playwright → POST session）
 public/
@@ -161,18 +165,16 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **自动选中最新点位**: 页面加载和切换账号后，自动跳转到当前账号最新点位并高亮列表项。通过 `activePointKey` 变量保存选中点，每次 `renderAll` 后恢复高亮，避免 `checkStatus` 轮询重绘导致丢失
 - **记忆选中账号**: 使用 `localStorage` 持久化 `selectedPhone`，刷新页面后恢复上次选中的账号
 
+- **CF Functions 去重合并未更新 timestamp**: `functions/api/locate.ts` 和 `worker-cron/index.ts` 的 `saveRecord` 在去重合并时只 SET `updated_at`，未 SET `timestamp`，导致前端按 `r.timestamp` 筛选时记录被过滤掉。改为同时更新两个字段
+- **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新
+
 ### In Progress
-- **Cloudflare 部署方案实现**:
-  - Cloudflare Pages + Functions + Chron Worker + D1 + KV 架构
-  - 登录与运行时解耦：GH Action 负责 Playwright 登录，POST session 到 `/api/session`
-  - session 过期检测 → 触发 GH Action（`workflow_dispatch`）刷新
-  - 前端录制开关控制 KV `recording:active`，Cron Worker 每 5 分钟轮询
-  - 新增 `src/locate-common.ts` 共享定位核心逻辑
-  - 新增 `functions/api/` 共 11 个 API endpoint 文件
-  - 新增 `worker-cron/index.ts` 定时录制 Worker
-  - 新增 `scripts/gh-login.ts` GH Action 登录脚本
-  - 新增 `wrangler.toml` / `wrangler-cron.toml` 配置
-  - 新增 `migrations/0000_init.sql` D1 表结构
+- **D1 请求日志**:
+  - 新增 `logger-d1.ts` 轻量日志写入工具，`INSERT INTO request_logs` 失败静默
+  - `migrations/0001_logs.sql` 建表（`id/timestamp/level/module/message/details/account`）
+  - locate/session/record/start/stop/cron 等所有 CF API endpoint 均记录关键事件
+  - 7 天保留期：Cron Worker 每天首次运行时清理 `timestamp < 7天前` 的日志
+  - 验证：单次定位产生 2 行日志（去重合并 + 定位成功），均带 account 和结构化 details
 
 ### Blocked
 - (none)
@@ -183,6 +185,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
 - 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
+- `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
 
 ## Git 工作流
 
