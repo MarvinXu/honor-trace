@@ -515,6 +515,7 @@ async function doLocate() {
       }
       await load()
       if (window._cachedAccounts) renderAll(window._cachedAccounts)
+      autoSelectLatest()
     } else {
       toast(`定位失败: ${result.error}`, 3000)
     }

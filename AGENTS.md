@@ -132,6 +132,10 @@ session 过期自动检测 + 可配置重试：
 ### 混合登录策略
 Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch` 发出。多账号时每账号独立缓存 session，互不干扰。
 
+### Session 过期处理：本地 vs CF Functions
+- **本地 serve**：`ensureSession` 阻塞式登录，Playwright 在进程内完成（几秒），定位请求等待登录成功后继续，前端无感知
+- **CF Functions**：无浏览器，session 过期后触发 GitHub Action 登录（排队+启动+脚本约 1-2 分钟），无法阻塞等待，故先返回 `session_expired` + `retryAfter: 60`，前端 toast 提示后 setTimeout 60s 自动重试 `doLocate()`
+
 ### 坐标系统
 荣耀 API 返回 WGS84 坐标。前端使用高德瓦片（GCJ-02），前端渲染时实时转换 WGS84→GCJ-02 以确保标记与瓦片对齐。最大瓦片缩放 z=18。坐标若不转换会有约 500m 视觉偏移。
 
