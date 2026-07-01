@@ -607,8 +607,30 @@ function autoSelectLatest() {
   if (last) jumpToPoint(selectedPhone, last.lat, last.lng, recordKey(last))
 }
 
-statusPollTimer = setInterval(checkStatus, 5000)
-checkStatus()
+function startStatusPoll() {
+  stopStatusPoll()
+  checkStatus()
+}
+function stopStatusPoll() {
+  if (statusPollTimer) {
+    clearTimeout(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopStatusPoll()
+  } else {
+    startStatusPoll()
+  }
+})
+
+async function checkStatusLoop() {
+  await checkStatus()
+  if (!document.hidden) statusPollTimer = setTimeout(checkStatusLoop, 5000)
+}
+checkStatusLoop()
 load().then(async () => {
   await autoLocate()
   autoSelectLatest()
