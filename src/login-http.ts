@@ -62,7 +62,8 @@ async function doLogin(phone: string, password: string): Promise<Session> {
     const page = await context.newPage();
 
     await page.goto('https://cloud.hihonor.com/findmydevice/webFindOpenPage.html', {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
     });
 
     const loginBtn = page.getByText('立即登录').first();

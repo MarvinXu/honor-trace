@@ -178,6 +178,8 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新
 - **`load()` 守卫导致合并后筛选时间不更新**: `load()` 的 `dateTo` 更新和 `renderAll` 都套在 `total !== lastTotalCount` 里，去重合并后总数不变导致 `dateTo` 不更新、重绘跳过。去掉守卫，每次 `load()` 都更新 `dateTo` 并重绘
 
+- **修复登录 goto 超时**: `page.goto` 的 `waitUntil: 'networkidle'` 会因页面长连接（WebSocket/埋点/轮询）永不触发，导致 30s 超时。改为 `'domcontentloaded'` + 已有的显式元素等待（`waitFor('visible')`/`click()` 内置 auto-wait），`login.ts` 同时移除多余的 `waitForLoadState('networkidle')`
+
 ### In Progress
 - (none)
 

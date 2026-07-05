@@ -23,7 +23,7 @@ export async function login(
   // 打开查找设备页面
   await page.goto(
     'https://cloud.hihonor.com/findmydevice/webFindOpenPage.html#/',
-    { waitUntil: 'networkidle', timeout: 30000 },
+    { waitUntil: 'domcontentloaded', timeout: 30000 },
   );
 
   // 处理 Cookie 提示（如果有）
@@ -78,11 +78,8 @@ export async function login(
     await page.waitForURL('**/webFindPhone.html**', { timeout: 15000 });
   }
 
-  // 等待跳转到查找设备主页
   await page.waitForURL('**/webFindPhone.html**', { timeout: 20000 });
-  await page.waitForLoadState('networkidle', { timeout: 15000 });
 
-  // 额外等 API 完成
   await page.waitForTimeout(2000);
 
   // 提取 csrftoken
