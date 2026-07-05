@@ -32,7 +32,7 @@ export async function onRequest(context: any): Promise<Response> {
   ).bind(account, timestamp).run()
   const deleted = (result as any).meta?.changes > 0
   if (!deleted) return json({ ok: false, error: '未找到匹配的记录' })
-  await logD1(env.D1, 'INFO', 'api', '删除记录', { account, timestamp, by: 'account+timestamp' })
+  await logD1(env.D1, 'INFO', 'api', '删除记录', { timestamp, by: 'account+timestamp' }, account)
   return json({ ok: true })
 }
 

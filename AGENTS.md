@@ -153,6 +153,11 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ## Progress
 
 ### Done
+- **D1 日志格式统一**:
+  - 定位详情（lat/lng/accuracy/networkType/networkName/battery）融入去重决策日志，每次定位只产 1 行日志
+  - `saveRecord` 内消息区分 `"去重合并"`（带 origId）和 `"位置变化，新增记录"`（纯 details），移除冗余的 `"完全相同，跳过"` 分支（timestamp 必然不同）
+  - `account` 字段统一通过 `logD1` 第 6 参数写入 D1 `account` 列，`details` JSON 不再包含 `account`
+  - 手动定位（`locate`）和 Cron 录制（`cron`）日志格式完全一致
 - **日志方案统一**:
   - 新增 `logger.ts` — 格式化输出 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`
   - 全量替换 `console.log/error` 为 `logger.info/error/warn`
@@ -174,14 +179,6 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **`load()` 守卫导致合并后筛选时间不更新**: `load()` 的 `dateTo` 更新和 `renderAll` 都套在 `total !== lastTotalCount` 里，去重合并后总数不变导致 `dateTo` 不更新、重绘跳过。去掉守卫，每次 `load()` 都更新 `dateTo` 并重绘
 
 ### In Progress
-- **D1 请求日志**:
-  - 新增 `logger-d1.ts` 轻量日志写入工具，`INSERT INTO request_logs` 失败静默
-  - `migrations/0001_logs.sql` 建表（`id/timestamp/level/module/message/details/account`）
-  - locate/session/record/start/stop/cron 等所有 CF API endpoint 均记录关键事件
-  - 7 天保留期：Cron Worker 每天首次运行时清理 `timestamp < 7天前` 的日志
-  - 验证：单次定位产生 2 行日志（去重合并 + 定位成功），均带 account 和结构化 details
-
-### Blocked
 - (none)
 
 ## Key Decisions
@@ -190,7 +187,9 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
 - 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
-- `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
+- D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
+- D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
+- 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并"` 和 `"位置变化，新增记录"`
 
 ## Git 工作流
 

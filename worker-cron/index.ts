@@ -28,7 +28,7 @@ export default {
     for (const acct of accounts) {
       const sessionRaw = await env.SESSION_KV.get(`session:${acct.phone}`)
       if (!sessionRaw) {
-        await logD1(env.D1, 'WARN', 'cron', 'session 为空，跳过', { account: acct.phone, name: acct.name })
+        await logD1(env.D1, 'WARN', 'cron', 'session 为空，跳过', { name: acct.name }, acct.phone)
         if (!triggered) { await maybeTriggerLogin(env); triggered = true }
         failCount++
         continue
@@ -37,13 +37,13 @@ export default {
       const session = JSON.parse(sessionRaw)
       const test = await testSession(session)
       if (test === 'expired') {
-        await logD1(env.D1, 'WARN', 'cron', 'session 已过期', { account: acct.phone, name: acct.name })
+        await logD1(env.D1, 'WARN', 'cron', 'session 已过期', { name: acct.name }, acct.phone)
         if (!triggered) { await maybeTriggerLogin(env); triggered = true }
         failCount++
         continue
       }
       if (test === 'error') {
-        await logD1(env.D1, 'ERROR', 'cron', 'session 测试网络错误', { account: acct.phone, name: acct.name })
+        await logD1(env.D1, 'ERROR', 'cron', 'session 测试网络错误', { name: acct.name }, acct.phone)
         failCount++
         continue
       }
@@ -54,7 +54,7 @@ export default {
         threshold,
       )
       if (!result.ok) {
-        await logD1(env.D1, 'WARN', 'cron', result.error, { account: acct.phone, name: acct.name })
+        await logD1(env.D1, 'WARN', 'cron', result.error, { name: acct.name }, acct.phone)
         failCount++
         continue
       }
@@ -88,6 +88,12 @@ async function cleanupLogs(env: Env): Promise<void> {
 }
 
 async function saveRecord(env: Env, account: string, record: LocationRecord): Promise<void> {
+  const details = {
+    lat: record.lat, lng: record.lng, accuracy: record.accuracy,
+    networkType: record.networkType, networkName: record.networkName,
+    battery: record.battery,
+  }
+
   const last = await env.D1.prepare(
     'SELECT * FROM location_records WHERE account = ? ORDER BY timestamp DESC LIMIT 1'
   ).bind(account).all()
@@ -95,10 +101,6 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
   const results = (last as any).results || []
   if (results.length > 0) {
     const l = results[0]
-    if (l.lat === record.lat && l.lng === record.lng && l.timestamp === record.timestamp) {
-      await logD1(env.D1, 'INFO', 'cron', '完全相同，跳过', { account, origId: l.id })
-      return
-    }
 
     const lastRecord: LocationRecord = {
       lat: l.lat,
@@ -113,12 +115,12 @@ async function saveRecord(env: Env, account: string, record: LocationRecord): Pr
     if (shouldDedup(lastRecord, record)) {
       await env.D1.prepare('UPDATE location_records SET timestamp = ?, updated_at = ? WHERE id = ?')
         .bind(record.timestamp, record.timestamp, l.id).run()
-      await logD1(env.D1, 'INFO', 'cron', '去重合并', { account, origId: l.id })
+      await logD1(env.D1, 'INFO', 'cron', '去重合并', { ...details, origId: l.id }, account)
       return
     }
-    await logD1(env.D1, 'INFO', 'cron', '位置变化，新增记录', { account, origId: l.id })
   }
 
+  await logD1(env.D1, 'INFO', 'cron', '位置变化，新增记录', details, account)
   await env.D1.prepare(
     `INSERT INTO location_records
      (timestamp, updated_at, lat, lng, accuracy, battery, address, device_name,
