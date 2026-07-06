@@ -5,9 +5,11 @@ import type { Session, LocationRecord, AccountConfig } from './types.js'
 
 export type SessionTestResult = 'valid' | 'expired' | 'error'
 
+export type LocateReason = 'session_expired' | 'network_error' | 'other';
+
 export type LocateResult =
-  { ok: true; record: LocationRecord }
-  | { ok: false; error: string }
+  | { ok: true; record: LocationRecord }
+  | { ok: false; error: string; reason?: LocateReason }
 
 export async function testSession(session: Session): Promise<SessionTestResult> {
   try {
@@ -41,7 +43,14 @@ export async function doLocate(
   const device = deviceResp.deviceList[0]
   const ts = new Date().toISOString()
 
-  await locateDevice(session, device).catch(() => {})
+  const locateResp = await locateDevice(session, device).catch((err) => {
+    return { code: 'http_error', info: err instanceof Error ? err.message : String(err) } as import('./types.js').LocateResponse
+  })
+  if (!locateResp || locateResp.code !== '0') {
+    const is401 = locateResp?.info?.includes('401') || locateResp?.info?.includes('Unauthorized')
+    return { ok: false, error: `定位触发失败: ${locateResp?.info || '请求异常'}`, reason: is401 ? 'session_expired' : 'other' }
+  }
+
   await new Promise(r => setTimeout(r, 4000))
   const resultResp = await queryLocateResult(session, device)
   if (resultResp.code !== '0') {

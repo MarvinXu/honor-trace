@@ -53,6 +53,12 @@ export default {
         threshold,
       )
       if (!result.ok) {
+        if (result.reason === 'session_expired') {
+          await logD1(env.D1, 'WARN', 'cron', 'session 已过期（locate 401），触发登录', { name: acct.name }, acct.phone)
+          if (!triggered) { await maybeTriggerLogin(env); triggered = true }
+          failCount++
+          continue
+        }
         await logD1(env.D1, 'WARN', 'cron', result.error, { name: acct.name }, acct.phone)
         failCount++
         continue

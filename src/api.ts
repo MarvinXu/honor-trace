@@ -21,8 +21,13 @@ function traceId(prefix: string, dev?: { appVersion: string; romVersion: string 
   return id;
 }
 
-async function post<T>(session: Session, path: string, body: any): Promise<T> {
+async function post<T>(session: Session, path: string, body: any, extraHeaders?: Record<string, string>): Promise<T> {
   const url = `${BASE}${path}`;
+  const reqId = `${Date.now().toString(36).slice(-4)}_${Math.random().toString(36).slice(-3)}`;
+  console.log(`[REQ][${reqId}] POST ${url}`);
+  console.log(`[REQ][${reqId}] body: ${JSON.stringify(body).slice(0, 5000)}`);
+
+  const start = Date.now();
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -32,9 +37,19 @@ async function post<T>(session: Session, path: string, body: any): Promise<T> {
       'content-type': 'application/json;charset=UTF-8',
       'Referer': 'https://cloud.hihonor.com/findmydevice/webFindPhone.html',
       'User-Agent': UA,
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
+  const duration = Date.now() - start;
+
+  const cloned = res.clone();
+  const text = await cloned.text().catch(() => '');
+  console.log(`[RESP][${reqId}] ${res.status} in ${duration}ms: ${text.slice(0, 5000)}`);
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+  }
   return res.json();
 }
 
@@ -75,30 +90,16 @@ export async function queryLocateResult(
 export async function locateDevice(
   session: Session, device: DeviceItem,
 ): Promise<LocateResponse> {
-  const url = `${BASE}/findmydevice/findDevice/locate`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Cookie': session.cookies,
-      'csrftoken': session.csrftoken,
-      'userid': session.userid,
-      'content-type': 'application/json;charset=UTF-8',
-      'Referer': 'https://cloud.hihonor.com/findmydevice/webFindPhone.html',
-      'User-Agent': UA,
-      'end': 'WEB',
-    },
-    body: JSON.stringify({
-      deviceType: device.deviceType,
-      perDeviceType: device.perDeviceType,
-      cptList: '',
-      end: 'WEB',
-      deviceCategory: '',
-      traceId: traceId('01001_02', device),
-      deviceId: device.deviceId,
-      sequence: 0,
-    }),
-  });
-  return res.json();
+  return post(session, '/findmydevice/findDevice/locate', {
+    deviceType: device.deviceType,
+    perDeviceType: device.perDeviceType,
+    cptList: '',
+    end: 'WEB',
+    deviceCategory: '',
+    traceId: traceId('01001_02', device),
+    deviceId: device.deviceId,
+    sequence: 0,
+  }, { 'end': 'WEB' });
 }
 
 export function parseLocateInfo(raw: string): LocateInfo {

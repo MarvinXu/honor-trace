@@ -184,13 +184,22 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - (none)
 
 ### Done
+- **`locateDevice` 401 检测与 session 过期自动触发登录**:
+  - `api.ts` 的 `post()` 添加 HTTP 状态码检查（`!res.ok` throw），`locateDevice` 复用 `post()` 消除代码重复
+  - `LocateResult` 新增 `reason` 字段（`'session_expired' | 'network_error' | 'other'`），`doLocate` 捕获 `locateDevice` 401 时返回 `reason: 'session_expired'`
+  - `worker-cron` 和 `functions/api/locate.ts` 外层识别 `reason === 'session_expired'` 时触发 `maybeTriggerLogin()` 自动重新登录
+  - 解决此前 `await locateDevice(...).catch(() => {})` 静默吞掉 401，导致 `queryLocateResult` 返回旧缓存数据、连续 100 条记录完全相同的 bug
+- **api 层统一请求/响应日志**：`post()` 添加 `reqId` 追踪，输出 `[REQ]` / `[RESP]` 日志。日志在本地终端、Pages Functions、Cron Worker 三个环境均可见，无需再在 `worker-cron` 中写全局 `fetch` 代理
 - **去重合并原因可追溯**: `shouldDedup` 返回值从 `boolean` 改为 `string | null`（`'同WiFi静止去漂移'` / `'距离XXm'`），D1 日志 `message` 变为 `"去重合并: ${reason}"`，可直接从日志看合并原因
 - **D1 日志 details 补全**: 从 6 字段（lat/lng/accuracy/networkType/networkName/battery）扩展为完整 14 字段，新增 `networkSignal`、`isCharging`、`isLockScreen`、`simNo`、`carrier`、`deviceName`、`address`
 - **合并定位全字段覆盖**: 不再仅更新时间戳，而是全量覆盖旧记录。`updateRecordTimestamp` 重命名为 `updateRecord`，接收完整 `LocationRecord`；D1 UPDATE SQL 从 2 字段扩展为 17 字段全量 SET。解决了合并后电量/状态信息凝固不更新的问题
 - **修复点位列表切换弹窗 bug**: `recordKey` 在 `r.id` 为数字时返回 number，但 HTML onclick 传参为 string，导致 `Map.get` 严格相等查不到 marker。改为 `String()` 统一为字符串。同时 AMap `openPopup` 每次创建全新 `InfoWindow` 实例，避免 close 后实例复用失败
 
 ## Key Decisions
-- AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
+- `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略
+- `locateDevice` 401 与 `getHomeData` 200 的 session 不一致：荣耀对 `/locate` 接口的认证比 `getHomeData` 更严格，不能仅依赖 `testSession`（测 `getHomeData`）来判断 `locateDevice` 的可用性，必须在 `locateDevice` 返回后兜底检测
+- 将 API 请求/响应日志下沉到 `api.ts` 的 `post()` 中，而非在 `worker-cron` 中写全局 `fetch` 代理，这样本地、Pages Functions、Cron Worker 三个环境都能统一看到日志
+- AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与`moveend` 不触发
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`

@@ -49,6 +49,11 @@ export async function onRequest(context: any): Promise<Response> {
   const threshold = parseInt(env.ACCURACY_THRESHOLD || '5000', 10)
   const result = await doLocate(acct, session, threshold)
   if (!result.ok) {
+    if (result.reason === 'session_expired') {
+      await logD1(env.D1, 'WARN', 'locate', 'session 已过期（locate 401），触发登录', { name: acct.name }, acct.phone)
+      await maybeTriggerLogin(env)
+      return json({ ok: false, error: 'session_expired', retryAfter: 60 })
+    }
     await logD1(env.D1, 'WARN', 'locate', result.error, { name: acct.name }, acct.phone)
     return json(result)
   }
