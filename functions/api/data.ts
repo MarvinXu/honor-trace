@@ -22,7 +22,6 @@ export async function onRequest(context: any): Promise<Response> {
     simNo: r.sim_no,
     carrier: r.carrier,
     isCharging: r.is_charging,
-    isLockScreen: r.is_lock_screen,
   }))
 
   return new Response(JSON.stringify(mapped), {

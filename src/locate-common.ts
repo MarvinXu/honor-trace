@@ -86,7 +86,6 @@ export async function doLocate(
       simNo: info.simInfo?.no,
       carrier: info.simDetailInfo?.[0]?.operatorName,
       isCharging: info.batteryStatus?.isCharging === '1' ? '是' : '否',
-      isLockScreen: info.isLockScreen === 1 ? '是' : '否',
     },
   }
 }
@@ -101,7 +100,7 @@ export async function saveRecord(
     lat: record.lat, lng: record.lng, accuracy: record.accuracy,
     networkType: record.networkType, networkName: record.networkName,
     networkSignal: record.networkSignal,
-    battery: record.battery, isCharging: record.isCharging, isLockScreen: record.isLockScreen,
+    battery: record.battery, isCharging: record.isCharging,
     simNo: record.simNo, carrier: record.carrier,
     deviceName: record.deviceName, address: record.address,
   }
@@ -120,7 +119,6 @@ export async function saveRecord(
       networkType: l.network_type,
       networkName: l.network_name,
       isCharging: l.is_charging,
-      isLockScreen: l.is_lock_screen,
     } as any
 
     const reason = shouldDedup(lastRecord, record)
@@ -133,7 +131,7 @@ export async function saveRecord(
           address = ?, device_name = ?,
           account = ?, account_name = ?,
           network_name = ?, network_type = ?, network_signal = ?,
-          sim_no = ?, carrier = ?, is_charging = ?, is_lock_screen = ?
+          sim_no = ?, carrier = ?, is_charging = ?
         WHERE id = ?`
       ).bind(
         record.timestamp, record.timestamp,
@@ -144,7 +142,6 @@ export async function saveRecord(
         record.networkName || null, record.networkType || null,
         record.networkSignal || null, record.simNo || null,
         record.carrier || null, record.isCharging || null,
-        record.isLockScreen || null,
         l.id,
       ).run()
       await logD1(d1, 'INFO', module, `去重合并: ${reason}`, { ...details, origId: l.id }, account)
@@ -168,6 +165,5 @@ export async function saveRecord(
     record.networkName || null, record.networkType || null,
     record.networkSignal || null, record.simNo || null,
     record.carrier || null, record.isCharging || null,
-    record.isLockScreen || null,
   ).run()
 }

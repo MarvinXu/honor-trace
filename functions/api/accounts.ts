@@ -57,6 +57,5 @@ function mapRecord(r: any): any {
     simNo: r.sim_no,
     carrier: r.carrier,
     isCharging: r.is_charging,
-    isLockScreen: r.is_lock_screen,
   }
 }

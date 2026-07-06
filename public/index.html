@@ -64,7 +64,6 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Ro
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <span>SIM: <span id="detSim" style="color:#555"></span></span>
       <span>运营商: <span id="detCarrier" style="color:#555"></span></span>
-      <span>锁屏: <span id="detLock" style="color:#555"></span></span>
     </div>
     <div>时间: <span id="detTime" style="color:#555"></span></div>
   </div>
@@ -368,7 +367,6 @@ function renderAll(accounts) {
     document.getElementById('detNetwork').textContent = net || '-'
     document.getElementById('detSim').textContent = last.simNo || '-'
     document.getElementById('detCarrier').textContent = last.carrier || '-'
-    document.getElementById('detLock').textContent = last.isLockScreen || '-'
     document.getElementById('detTime').textContent = displayTime(last)
     document.getElementById('detail').style.display = ''
   } else {

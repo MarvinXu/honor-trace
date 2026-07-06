@@ -133,7 +133,6 @@ async function doLocate(acct: AccountConfig, traceId?: string): Promise<{ ok: bo
       simNo: info.simInfo?.no,
       carrier: info.simDetailInfo?.[0]?.operatorName,
       isCharging: info.batteryStatus?.isCharging === '1' ? '是' : '否',
-      isLockScreen: info.isLockScreen === 1 ? '是' : '否',
     }
     return { ok: true, record }
   } catch (err: any) {

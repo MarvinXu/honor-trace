@@ -19,7 +19,7 @@ export function shouldDedup(last: LocationRecord, next: LocationRecord, cfg?: Pa
   const c = { ...defaults, ...cfg }
 
   if (last.networkType === 'WiFi' && next.networkType === 'WiFi' && last.networkName === next.networkName) {
-    if (last.isCharging !== next.isCharging || last.isLockScreen !== next.isLockScreen) return null
+    if (last.isCharging !== next.isCharging) return null
     return '同WiFi静止去漂移'
   }
 
