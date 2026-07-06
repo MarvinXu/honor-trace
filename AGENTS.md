@@ -199,7 +199,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略
 - `locateDevice` 401 与 `getHomeData` 200 的 session 不一致：荣耀对 `/locate` 接口的认证比 `getHomeData` 更严格，不能仅依赖 `testSession`（测 `getHomeData`）来判断 `locateDevice` 的可用性，必须在 `locateDevice` 返回后兜底检测
 - 将 API 请求/响应日志下沉到 `api.ts` 的 `post()` 中，而非在 `worker-cron` 中写全局 `fetch` 代理，这样本地、Pages Functions、Cron Worker 三个环境都能统一看到日志
-- AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与`moveend` 不触发
+- Cloudflare Workers 模块引用是构建时打包而非运行时加载：`worker-cron/index.ts` 引用的 `../src/locate-common.js` 会在 `wrangler deploy` 时被打包进最终的 Worker bundle 中，修改 `locate-common.ts` 后必须重新部署 `worker-cron` 才能生效
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
