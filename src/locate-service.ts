@@ -1,4 +1,4 @@
-import { getMobileDeviceList, locateDevice, queryLocateResult, parseLocateInfo, regeoAddress, wgs84ToGcj02, decodeNetworkType, decodeSignalStrength } from './api.js'
+import { getMobileDeviceList, locateDevice, queryLocateResult, parseLocateInfo, regeoAddress, wgs84ToGcj02, decodeNetworkType, decodeSignalStrength } from './honor-client.js'
 import { shouldDedup } from './dedup.js'
 import { logD1 } from './logger-d1.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'

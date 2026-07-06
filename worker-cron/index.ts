@@ -1,4 +1,4 @@
-import { doLocate, testSession, saveRecord, maybeTriggerLogin } from '../src/locate-common.js'
+import { doLocate, testSession, saveRecord, maybeTriggerLogin } from '../src/locate-service.js'
 import { logD1 } from '../src/logger-d1.js'
 import type { LocationRecord } from '../src/types.js'
 

@@ -1,4 +1,4 @@
-import { wgs84ToGcj02 } from '../../src/api.js'
+import { wgs84ToGcj02 } from '../../src/honor-client.js'
 
 export function json(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {

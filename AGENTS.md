@@ -9,11 +9,11 @@ src/
 ├── index.ts             入口，支持 once/serve 两种模式
 ├── serve.ts             全功能 HTTP 服务（静态文件 + 多账号定位 + 录制 API）
 ├── account-config.ts    账号配置加载（accounts.json / 环境变量）
-├── login.ts             Playwright 浏览器登录（全浏览器模式）
-├── login-http.ts        混合登录（Playwright 登录后用 HTTP 保持 session）
-├── api.ts               荣耀查找设备 HTTP API 封装
-├── location-store.ts    位置数据本地 JSON 文件读写（支持自增 id）
-├── locate-common.ts     共享定位逻辑（给 serve + CF Functions 共用）
+├── login-browser.ts      Playwright 全浏览器模式（保持浏览器上下文）
+├── login-http.ts         混合登录（Playwright 登录后用 HTTP 保持 session）
+├── honor-client.ts       荣耀查找设备 HTTP API 封装
+├── store.ts              位置数据本地 JSON 文件读写（支持自增 id）
+├── locate-service.ts     定位业务编排（serve / CF Functions / cron 共享）
 ├── logger.ts            结构化日志工具（级别/模块/traceId）
 ├── logger-d1.ts         D1 日志写入工具
 ├── types.ts             类型定义
@@ -169,7 +169,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
 - **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中
 - **修复 AMap isCustom InfoWindow 不弹窗 bug**: `jumpToPoint` 从依赖 `map.on('moveend')` 改为 `setTimeout(() => Eng.openPopup(m), 100)`，解决近距离点位切换时 `moveend` 不触发导致弹窗不显示的问题
-- **登录流程适配协议弹窗**: 荣耀登录页面新增协议更新弹窗（remoteLogin 返回 `need to agree agreement`），在 `login-http.ts:89` 和 `login.ts:59-68` 添加弹窗检测/点击逻辑，兼容无弹窗场景
+- **登录流程适配协议弹窗**: 荣耀登录页面新增协议更新弹窗（remoteLogin 返回 `need to agree agreement`），在 `login-http.ts:89` 和 `login-browser.ts:59-68` 添加弹窗检测/点击逻辑，兼容无弹窗场景
 - **页面自动定位**: 页面加载时检查各账号在筛选时间范围内是否有数据，无数据则自动定位。当前账号触发完整前端交互（按钮状态、toast），其他账号后台静默完成
 - **自动选中最新点位**: 页面加载和切换账号后，自动跳转到当前账号最新点位并高亮列表项。通过 `activePointKey` 变量保存选中点，每次 `renderAll` 后恢复高亮，避免 `checkStatus` 轮询重绘导致丢失
 - **记忆选中账号**: 使用 `localStorage` 持久化 `selectedPhone`，刷新页面后恢复上次选中的账号
@@ -178,14 +178,14 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新
 - **`load()` 守卫导致合并后筛选时间不更新**: `load()` 的 `dateTo` 更新和 `renderAll` 都套在 `total !== lastTotalCount` 里，去重合并后总数不变导致 `dateTo` 不更新、重绘跳过。去掉守卫，每次 `load()` 都更新 `dateTo` 并重绘
 
-- **修复登录 goto 超时**: `page.goto` 的 `waitUntil: 'networkidle'` 会因页面长连接（WebSocket/埋点/轮询）永不触发，导致 30s 超时。改为 `'domcontentloaded'` + 已有的显式元素等待（`waitFor('visible')`/`click()` 内置 auto-wait），`login.ts` 同时移除多余的 `waitForLoadState('networkidle')`
+- **修复登录 goto 超时**: `page.goto` 的 `waitUntil: 'networkidle'` 会因页面长连接（WebSocket/埋点/轮询）永不触发，导致 30s 超时。改为 `'domcontentloaded'` + 已有的显式元素等待（`waitFor('visible')`/`click()` 内置 auto-wait），`login-browser.ts` 同时移除多余的 `waitForLoadState('networkidle')`
 
 ### In Progress
 - (none)
 
 ### Done
 - **`locateDevice` 401 检测与 session 过期自动触发登录**:
-  - `api.ts` 的 `post()` 添加 HTTP 状态码检查（`!res.ok` throw），`locateDevice` 复用 `post()` 消除代码重复
+  - `honor-client.ts` 的 `post()` 添加 HTTP 状态码检查（`!res.ok` throw），`locateDevice` 复用 `post()` 消除代码重复
   - `LocateResult` 新增 `reason` 字段（`'session_expired' | 'network_error' | 'other'`），`doLocate` 捕获 `locateDevice` 401 时返回 `reason: 'session_expired'`
   - `worker-cron` 和 `functions/api/locate.ts` 外层识别 `reason === 'session_expired'` 时触发 `maybeTriggerLogin()` 自动重新登录
   - 解决此前 `await locateDevice(...).catch(() => {})` 静默吞掉 401，导致 `queryLocateResult` 返回旧缓存数据、连续 100 条记录完全相同的 bug
@@ -200,17 +200,17 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **抽取 mapRecord 到共享模块**: `functions/api/_helpers.ts` 统一存放 `mapRecord`，消除 `data.ts` 和 `accounts.ts` 的重复代码
 - **代码重构消除冗余**:
   - `json()` 从 6 个 functions 文件抽取到 `_helpers.ts`
-  - `maybeTriggerLogin` 从 `locate.ts` + `worker-cron` 抽取到 `locate-common.ts`
-  - `testSession` 三合一：`locate-common.ts` 增加 User-Agent，`serve.ts` 和 `login-http.ts` 改引用
-  - `handleAgreement` 从 `login.ts` + `login-http.ts` 抽取到 `login-http.ts`
-  - `serve.ts` 改用 `locate-common.ts` 的 `doLocate`，仅保留互斥锁包装，消除核心业务逻辑双份维护（同时修复 serve 版 401 静默吞 bug）
-  - `saveRecord` 封装去重合并逻辑到 `location-store.ts`，`recordingTick` 和 `handleApi` 共用
+  - `maybeTriggerLogin` 从 `locate.ts` + `worker-cron` 抽取到 `locate-service.ts`
+  - `testSession` 三合一：`locate-service.ts` 增加 User-Agent，`serve.ts` 和 `login-http.ts` 改引用
+  - `handleAgreement` 从 `login-browser.ts` + `login-http.ts` 抽取到 `login-http.ts`
+  - `serve.ts` 改用 `locate-service.ts` 的 `doLocate`，仅保留互斥锁包装，消除核心业务逻辑双份维护（同时修复 serve 版 401 静默吞 bug）
+  - `saveRecord` 封装去重合并逻辑到 `store.ts`，`recordingTick` 和 `handleApi` 共用
 
 ## Key Decisions
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略
 - `locateDevice` 401 与 `getHomeData` 200 的 session 不一致：荣耀对 `/locate` 接口的认证比 `getHomeData` 更严格，不能仅依赖 `testSession`（测 `getHomeData`）来判断 `locateDevice` 的可用性，必须在 `locateDevice` 返回后兜底检测
-- 将 API 请求/响应日志下沉到 `api.ts` 的 `post()` 中，而非在 `worker-cron` 中写全局 `fetch` 代理，这样本地、Pages Functions、Cron Worker 三个环境都能统一看到日志
-- Cloudflare Workers 模块引用是构建时打包而非运行时加载：`worker-cron/index.ts` 引用的 `../src/locate-common.js` 会在 `wrangler deploy` 时被打包进最终的 Worker bundle 中，修改 `locate-common.ts` 后必须重新部署 `worker-cron` 才能生效
+- 将 API 请求/响应日志下沉到 `honor-client.ts` 的 `post()` 中，而非在 `worker-cron` 中写全局 `fetch` 代理，这样本地、Pages Functions、Cron Worker 三个环境都能统一看到日志
+- Cloudflare Workers 模块引用是构建时打包而非运行时加载：`worker-cron/index.ts` 引用的 `../src/locate-service.js` 会在 `wrangler deploy` 时被打包进最终的 Worker bundle 中，修改 `locate-service.ts` 后必须重新部署 `worker-cron` 才能生效
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`

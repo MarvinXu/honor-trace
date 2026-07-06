@@ -1,13 +1,13 @@
 import 'dotenv/config'
 import { loginViaHttp } from './login-http.js'
-import { login } from './login.js'
+import { login } from './login-browser.js'
 import {
   getMobileDeviceList,
   queryLocateResult,
   parseLocateInfo,
   regeoAddress,
   wgs84ToGcj02,
-} from './api.js'
+} from './honor-client.js'
 import type { Session } from './types.js'
 import { startServer } from './serve.js'
 import { logger } from './logger.js'

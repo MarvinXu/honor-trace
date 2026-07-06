@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { chromium, type Page } from 'playwright';
-import { testSession } from './locate-common.js';
+import { testSession } from './locate-service.js';
 import type { Session } from './types.js';
 import { logger } from './logger.js';
 
