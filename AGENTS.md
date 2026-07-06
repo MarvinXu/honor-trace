@@ -137,7 +137,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **CF Functions**：无浏览器，session 过期后触发 GitHub Action 登录（排队+启动+脚本约 1-2 分钟），无法阻塞等待，故先返回 `session_expired` + `retryAfter: 60`，前端 toast 提示后 setTimeout 60s 自动重试 `doLocate()`
 
 ### 坐标系统
-荣耀 API 返回 WGS84 坐标。前端使用高德瓦片（GCJ-02），前端渲染时实时转换 WGS84→GCJ-02 以确保标记与瓦片对齐。最大瓦片缩放 z=18。坐标若不转换会有约 500m 视觉偏移。
+荣耀 API 返回 WGS84 坐标。高德瓦片和逆地理编码 API 均使用 GCJ-02，后端在调用 regeo 前由 `wgs84ToGcj02` 转换。API 响应（`/api/accounts`、`/api/data`）自动附加 `gcjLat`/`gcjLng` 字段，前端直接使用，不再内联转换函数。最大瓦片缩放 z=18。
 
 ### 多账号配色
 前端预定义 8 色调色板，每账号按顺序分配独立颜色。轨迹线、标记点、图例统一使用该账号颜色。最新点以纯色大圆标记，历史点为半透明。
@@ -195,6 +195,9 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **合并定位全字段覆盖**: 不再仅更新时间戳，而是全量覆盖旧记录。`updateRecordTimestamp` 重命名为 `updateRecord`，接收完整 `LocationRecord`；D1 UPDATE SQL 从 2 字段扩展为 17 字段全量 SET。解决了合并后电量/状态信息凝固不更新的问题
 - **修复点位列表切换弹窗 bug**: `recordKey` 在 `r.id` 为数字时返回 number，但 HTML onclick 传参为 string，导致 `Map.get` 严格相等查不到 marker。改为 `String()` 统一为字符串。同时 AMap `openPopup` 每次创建全新 `InfoWindow` 实例，避免 close 后实例复用失败
 - **移除 `is_lock_screen` 列**: 线上 D1 `location_records` 的 `is_lock_screen` 列在 INSERT SQL 中有列名和占位符但 `.bind()` 缺少对应值，导致新增记录时 INSERT 静默失败（`request_logs` 写入了但 `location_records` 无行）。改为从 DB 表、代码 SQL、`LocationRecord` 类型、migration 全链路删除该列，消除 bind 数量不匹配
+- **修复 regeo 坐标系错误**: 高德逆地理编码 API 需要 GCJ-02 坐标，此前直接传入 WGS84 导致地址偏移约 500m。新增 `wgs84ToGcj02` 转换函数，三处调用 `regeoAddress` 前先转换
+- **API 响应自带 GCJ 坐标**: `serve.ts` 和 CF Functions 的 `/api/accounts`、`/api/data` 响应中自动附加 `gcjLat`/`gcjLng` 字段，前端不再需要 `wgs2gcj` 内联转换函数
+- **抽取 mapRecord 到共享模块**: `functions/api/_helpers.ts` 统一存放 `mapRecord`，消除 `data.ts` 和 `accounts.ts` 的重复代码
 
 ## Key Decisions
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略
@@ -205,7 +208,6 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
 - 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
-- D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
 - D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
 - 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并: ${reason}"` 和 `"位置变化，新增记录"`
 - 合并时全量覆盖旧记录，保证电量、充电状态、锁屏、信号强度等实时状态不凝固

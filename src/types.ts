@@ -83,6 +83,8 @@ export interface LocationRecord {
   updatedAt?: string;
   lat: number;
   lng: number;
+  gcjLat?: number;
+  gcjLng?: number;
   accuracy: string;
   battery: string;
   address: string;

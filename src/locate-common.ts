@@ -1,4 +1,4 @@
-import { getMobileDeviceList, locateDevice, queryLocateResult, parseLocateInfo, regeoAddress, decodeNetworkType, decodeSignalStrength } from './api.js'
+import { getMobileDeviceList, locateDevice, queryLocateResult, parseLocateInfo, regeoAddress, wgs84ToGcj02, decodeNetworkType, decodeSignalStrength } from './api.js'
 import { shouldDedup } from './dedup.js'
 import { logD1 } from './logger-d1.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'
@@ -65,7 +65,8 @@ export async function doLocate(
 
   let address = ''
   if (session.amapKey) {
-    try { address = await regeoAddress(info.longitude_WGS, info.latitude_WGS, session.amapKey) } catch {}
+    const [gcjLng, gcjLat] = wgs84ToGcj02(info.longitude_WGS, info.latitude_WGS)
+    try { address = await regeoAddress(gcjLng, gcjLat, session.amapKey) } catch {}
   }
 
   return {

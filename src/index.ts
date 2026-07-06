@@ -6,6 +6,7 @@ import {
   queryLocateResult,
   parseLocateInfo,
   regeoAddress,
+  wgs84ToGcj02,
 } from './api.js'
 import type { Session } from './types.js'
 import { startServer } from './serve.js'
@@ -55,7 +56,8 @@ async function modeOnce(): Promise<void> {
 
   let address = ''
   if (session.amapKey) {
-    address = await regeoAddress(info.longitude_WGS, info.latitude_WGS, session.amapKey)
+    const [gcjLng, gcjLat] = wgs84ToGcj02(info.longitude_WGS, info.latitude_WGS)
+    address = await regeoAddress(gcjLng, gcjLat, session.amapKey)
   }
 
   logger.info('main', `${device.deviceAliasName} | 在线 | ${address || '未知'}`, {

@@ -155,9 +155,8 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   },
   setView: (gcj, zoom) => { if (map) map.setView(gcj, zoom) },
   openPopup: (marker) => { marker.openPopup() },
-  jumpToPoint: (key, lat, lng) => {
-    const gcj = wgs2gcj(lat, lng)
-    map.setView(gcj, 18, { animate: false })
+  jumpToPoint: (key, gcjLat, gcjLng) => {
+    map.setView([gcjLat, gcjLng], 18, { animate: false })
     const m = markersByKey.get(key)
     if (m) setTimeout(() => m.openPopup(), 100)
   },
@@ -203,43 +202,14 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
     info.open(map, marker.getPosition())
     marker._info = info
   },
-  jumpToPoint: (key, lat, lng) => {
-    const gcj = wgs2gcj(lat, lng)
-    map.setZoomAndCenter(18, [gcj[1], gcj[0]], true)
+  jumpToPoint: (key, gcjLat, gcjLng) => {
+    map.setZoomAndCenter(18, [gcjLng, gcjLat], true)
     const m = markersByKey.get(key)
     if (m) setTimeout(() => Eng.openPopup(m), 100)
   },
 }
 
-// ===== WGS84 → GCJ-02 =====
-const GCJ_PI = 3.141592653589793, GCJ_A = 6378245.0, GCJ_EE = 0.00669342162296594323
-function isOutOfChina(lat, lng) { return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271 }
-function gcjTransformLat(x, y) {
-  let t = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x))
-  t += (20*Math.sin(6*x*GCJ_PI) + 20*Math.sin(2*x*GCJ_PI)) * 2/3
-  t += (20*Math.sin(y*GCJ_PI) + 40*Math.sin(y/3*GCJ_PI)) * 2/3
-  t += (160*Math.sin(y/12*GCJ_PI) + 320*Math.sin(y*GCJ_PI/30)) * 2/3
-  return t
-}
-function gcjTransformLon(x, y) {
-  let t = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x))
-  t += (20*Math.sin(6*x*GCJ_PI) + 20*Math.sin(2*x*GCJ_PI)) * 2/3
-  t += (20*Math.sin(x*GCJ_PI) + 40*Math.sin(x/3*GCJ_PI)) * 2/3
-  t += (150*Math.sin(x/12*GCJ_PI) + 300*Math.sin(x/30*GCJ_PI)) * 2/3
-  return t
-}
-function wgs2gcj(wgsLat, wgsLng) {
-  if (isOutOfChina(wgsLat, wgsLng)) return [wgsLat, wgsLng]
-  let dLat = gcjTransformLat(wgsLng - 105, wgsLat - 35)
-  let dLng = gcjTransformLon(wgsLng - 105, wgsLat - 35)
-  const radLat = wgsLat / 180 * GCJ_PI
-  let magic = Math.sin(radLat)
-  magic = 1 - GCJ_EE * magic * magic
-  const sqrtMagic = Math.sqrt(magic)
-  dLat = (dLat * 180) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * GCJ_PI)
-  dLng = (dLng * 180) / (GCJ_A / sqrtMagic * Math.cos(radLat) * GCJ_PI)
-  return [wgsLat + dLat, wgsLng + dLng]
-}
+// ===== WGS84 → GCJ-02 (server-side only, see src/api.ts) =====
 
 // ===== Constants & State =====
 const ACCT_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e']
@@ -298,7 +268,7 @@ function renderAll(accounts) {
   for (const acct of accounts) {
     for (const d of acct.records) {
       if (!inRange(d)) continue
-      allBounds.push(wgs2gcj(d.lat, d.lng))
+      allBounds.push([d.gcjLat, d.gcjLng])
     }
   }
 
@@ -312,7 +282,7 @@ function renderAll(accounts) {
     if (raw.length === 0) continue
     const color = acctColor(acct.phone, accounts)
 
-    const coords = raw.map(d => wgs2gcj(d.lat, d.lng))
+    const coords = raw.map(d => [d.gcjLat, d.gcjLng])
     const line = Eng.polyline(coords, color)
     trailLines.push(line)
 
@@ -320,13 +290,12 @@ function renderAll(accounts) {
       const isLatest = i === raw.length - 1
       const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
       const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
-      const gcj = wgs2gcj(d.lat, d.lng)
       const popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${displayTime(d)}</strong><br>
-        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${gcj[0].toFixed(6)}, ${gcj[1].toFixed(6)})<br>
+        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${d.gcjLat.toFixed(6)}, ${d.gcjLng.toFixed(6)})<br>
         精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
         ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
         <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint(${d.id ?? `'${d.account}','${d.timestamp}'`})">删除此点</button>`
-      const m = Eng.circleMarker(gcj, {
+      const m = Eng.circleMarker([d.gcjLat, d.gcjLng], {
         radius: isLatest ? 7 : 5,
         color: isLatest ? color : dimColor(color),
         fillColor: isLatest ? color : dimColor(color),
@@ -413,11 +382,11 @@ function applyFilter() {
   if (window._cachedAccounts) renderAll(window._cachedAccounts)
 }
 
-function jumpToPoint(account, lat, lng, key) {
+function jumpToPoint(account, gcjLat, gcjLng, key) {
   selectedPhone = account
   localStorage.setItem('selectedPhone', account)
   activePointKey = key
-  Eng.jumpToPoint(activePointKey, lat, lng)
+  Eng.jumpToPoint(activePointKey, gcjLat, gcjLng)
   highlightPoint()
 }
 
@@ -449,7 +418,7 @@ function renderPointList(selected) {
     const t = displayTime(d)
     const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
     const key = recordKey(d)
-    html += `<div class="point-item" data-key="${key}" onclick="jumpToPoint('${selected.phone}',${d.lat},${d.lng},'${key}')">
+    html += `<div class="point-item" data-key="${key}" onclick="jumpToPoint('${selected.phone}',${d.gcjLat},${d.gcjLng},'${key}')">
       <div class="pt-time">${t}</div>
       <div class="pt-addr">${addr}</div>
     </div>`
@@ -605,7 +574,7 @@ async function autoLocate() {
 function autoSelectLatest() {
   const acct = (window._cachedAccounts || []).find(a => a.phone === selectedPhone)
   const last = acct?.records?.[acct.records.length - 1]
-  if (last) jumpToPoint(selectedPhone, last.lat, last.lng, recordKey(last))
+  if (last) jumpToPoint(selectedPhone, last.gcjLat, last.gcjLng, recordKey(last))
 }
 
 function startStatusPoll() {

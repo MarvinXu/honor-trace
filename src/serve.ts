@@ -8,7 +8,7 @@ import { loadAccounts } from './account-config.js'
 import { shouldDedup } from './dedup.js'
 import {
   getMobileDeviceList, queryLocateResult, parseLocateInfo,
-  regeoAddress, locateDevice, decodeNetworkType, decodeSignalStrength,
+  regeoAddress, wgs84ToGcj02, locateDevice, decodeNetworkType, decodeSignalStrength,
 } from './api.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'
 import { logger } from './logger.js'
@@ -105,7 +105,8 @@ async function doLocate(acct: AccountConfig, traceId?: string): Promise<{ ok: bo
 
     let address = ''
     if (s.amapKey) {
-      try { address = await regeoAddress(info.longitude_WGS, info.latitude_WGS, s.amapKey) } catch {}
+      const [gcjLng, gcjLat] = wgs84ToGcj02(info.longitude_WGS, info.latitude_WGS)
+      try { address = await regeoAddress(gcjLng, gcjLat, s.amapKey) } catch {}
     }
 
     const elapsed = Date.now() - startTime
@@ -141,6 +142,12 @@ async function doLocate(acct: AccountConfig, traceId?: string): Promise<{ ok: bo
   } finally {
     locatingFlags.set(acct.phone, false)
   }
+}
+
+function enrichRecord(r: LocationRecord): LocationRecord {
+  if (r.gcjLat !== undefined) return r
+  const [gcjLng, gcjLat] = wgs84ToGcj02(r.lng, r.lat)
+  return { ...r, gcjLat, gcjLng }
 }
 
 function getInterval(): number {
@@ -250,7 +257,7 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
   }
 
   if (url.pathname === '/api/accounts') {
-    const allRecords = loadRecords()
+    const allRecords = loadRecords().map(enrichRecord)
     const result = accountConfigs.map(acct => {
       const records = allRecords.filter(r => r.account === acct.phone)
       const last = records[records.length - 1]
@@ -266,7 +273,7 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
   }
 
   if (url.pathname === '/api/data') {
-    return done(loadRecords())
+    return done(loadRecords().map(enrichRecord))
   }
 
   if (url.pathname === '/api/status') {
@@ -302,7 +309,7 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
       } else {
         appendRecord(result.record)
       }
-      return done({ ok: true, record: result.record })
+      return done({ ok: true, record: enrichRecord(result.record) })
     }
     return done({ ok: false, error: result.error })
   }
