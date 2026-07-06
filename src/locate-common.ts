@@ -153,9 +153,9 @@ export async function saveRecord(
   await d1.prepare(
     `INSERT INTO location_records
      (timestamp, updated_at, lat, lng, accuracy, battery, address, device_name,
-      account, account_name, network_name, network_type, network_signal,
-      sim_no, carrier, is_charging, is_lock_screen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       account, account_name, network_name, network_type, network_signal,
+       sim_no, carrier, is_charging)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     record.timestamp, null,
     record.lat, record.lng,

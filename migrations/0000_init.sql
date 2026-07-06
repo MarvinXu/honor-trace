@@ -15,8 +15,7 @@ CREATE TABLE IF NOT EXISTS location_records (
   network_signal TEXT,
   sim_no TEXT,
   carrier TEXT,
-  is_charging TEXT,
-  is_lock_screen TEXT
+  is_charging TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_acct_ts ON location_records(account, timestamp);

@@ -194,6 +194,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **D1 日志 details 补全**: 从 6 字段（lat/lng/accuracy/networkType/networkName/battery）扩展为完整 14 字段，新增 `networkSignal`、`isCharging`、`isLockScreen`、`simNo`、`carrier`、`deviceName`、`address`
 - **合并定位全字段覆盖**: 不再仅更新时间戳，而是全量覆盖旧记录。`updateRecordTimestamp` 重命名为 `updateRecord`，接收完整 `LocationRecord`；D1 UPDATE SQL 从 2 字段扩展为 17 字段全量 SET。解决了合并后电量/状态信息凝固不更新的问题
 - **修复点位列表切换弹窗 bug**: `recordKey` 在 `r.id` 为数字时返回 number，但 HTML onclick 传参为 string，导致 `Map.get` 严格相等查不到 marker。改为 `String()` 统一为字符串。同时 AMap `openPopup` 每次创建全新 `InfoWindow` 实例，避免 close 后实例复用失败
+- **移除 `is_lock_screen` 列**: 线上 D1 `location_records` 的 `is_lock_screen` 列在 INSERT SQL 中有列名和占位符但 `.bind()` 缺少对应值，导致新增记录时 INSERT 静默失败（`request_logs` 写入了但 `location_records` 无行）。改为从 DB 表、代码 SQL、`LocationRecord` 类型、migration 全链路删除该列，消除 bind 数量不匹配
 
 ## Key Decisions
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略

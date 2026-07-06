@@ -95,7 +95,6 @@ export interface LocationRecord {
   simNo?: string;
   carrier?: string;
   isCharging?: string;
-  isLockScreen?: string;
 }
 
 export interface RegeoResponse {
