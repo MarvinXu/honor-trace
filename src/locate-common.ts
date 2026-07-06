@@ -20,6 +20,7 @@ export async function testSession(session: Session): Promise<SessionTestResult> 
         'csrftoken': session.csrftoken,
         'content-type': 'application/json;charset=UTF-8',
         'Referer': 'https://cloud.hihonor.com/findmydevice/webFindPhone.html',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
       },
       body: JSON.stringify({ traceId: `test_${Date.now()}`, lang: '' }),
     })
@@ -167,4 +168,38 @@ export async function saveRecord(
     record.networkSignal || null, record.simNo || null,
     record.carrier || null, record.isCharging || null,
   ).run()
+}
+
+export interface TriggerLoginEnv {
+  SESSION_KV: {
+    get: (k: string) => Promise<string | null>;
+    put: (k: string, v: string, opts?: { expirationTtl?: number }) => Promise<void>;
+  };
+  GH_PAT: string;
+  GH_REPO: string;
+  GH_REF?: string;
+}
+
+export async function maybeTriggerLogin(env: TriggerLoginEnv): Promise<void> {
+  const pending = await env.SESSION_KV.get('login-in-progress')
+  if (pending) return
+
+  await env.SESSION_KV.put('login-in-progress', JSON.stringify({ since: new Date().toISOString() }), {
+    expirationTtl: 1800,
+  })
+
+  try {
+    const ref = env.GH_REF || 'main'
+    await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/workflows/login.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.GH_PAT}`,
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'honor-trace',
+      },
+      body: JSON.stringify({ ref }),
+    })
+  } catch {
+    // 触发失败不影响主流程
+  }
 }

@@ -1,4 +1,5 @@
 import { logD1 } from '../../src/logger-d1.js'
+import { json } from './_helpers.js'
 
 interface Env { D1: any }
 
@@ -34,11 +35,4 @@ export async function onRequest(context: any): Promise<Response> {
   if (!deleted) return json({ ok: false, error: '未找到匹配的记录' })
   await logD1(env.D1, 'INFO', 'api', '删除记录', { timestamp, by: 'account+timestamp' }, account)
   return json({ ok: true })
-}
-
-function json(data: any, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
 }

@@ -1,5 +1,12 @@
 import { wgs84ToGcj02 } from '../../src/api.js'
 
+export function json(data: any, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 export function mapRecord(r: any): any {
   const [gcjLng, gcjLat] = wgs84ToGcj02(r.lng, r.lat)
   return {

@@ -6,10 +6,8 @@ import { loadRecords, appendRecord, deleteRecord, updateRecord } from './locatio
 import { loginViaHttp } from './login-http.js'
 import { loadAccounts } from './account-config.js'
 import { shouldDedup } from './dedup.js'
-import {
-  getMobileDeviceList, queryLocateResult, parseLocateInfo,
-  regeoAddress, wgs84ToGcj02, locateDevice, decodeNetworkType, decodeSignalStrength,
-} from './api.js'
+import { doLocate as doLocateCommon, testSession } from './locate-common.js'
+import { wgs84ToGcj02 } from './api.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'
 import { logger } from './logger.js'
 
@@ -33,21 +31,13 @@ function sleep(ms: number): Promise<void> {
 async function ensureSession(acct: AccountConfig, traceId?: string): Promise<Session> {
   const existing = sessions.get(acct.phone)
   if (existing) {
-    try {
-      const r = await fetch('https://cloud.hihonor.com/findmydevice/api/html/getHomeData', {
-        method: 'POST',
-        headers: {
-          'Cookie': existing.cookies,
-          'csrftoken': existing.csrftoken,
-          'content-type': 'application/json;charset=UTF-8',
-          'Referer': 'https://cloud.hihonor.com/findmydevice/webFindPhone.html',
-        },
-        body: JSON.stringify({ traceId: `test_${Date.now()}`, lang: '' }),
-      })
-      const d = await r.json()
-      if (d.userid) return existing
-      logger.info('session', `${acct.name} session 已过期，准备重新登录`, undefined, traceId)
-    } catch {}
+    const test = await testSession(existing)
+    if (test === 'valid') return existing
+    if (test === 'error') {
+      logger.info('session', `${acct.name} session 测试网络错误，尝试继续使用`, undefined, traceId)
+      return existing
+    }
+    logger.info('session', `${acct.name} session 已过期，准备重新登录`, undefined, traceId)
   } else {
     logger.info('session', `${acct.name} session 为空，准备重新登录`, undefined, traceId)
   }
@@ -77,65 +67,20 @@ async function doLocate(acct: AccountConfig, traceId?: string): Promise<{ ok: bo
   try {
     const s = await ensureSession(acct, traceId)
     const startTime = Date.now()
-
-    const deviceResp = await getMobileDeviceList(s)
-    if (deviceResp.code !== '0' || !deviceResp.deviceList?.length) {
-      return { ok: false, error: '未找到设备' }
-    }
-    const device = deviceResp.deviceList[0]
-    const ts = new Date().toISOString()
-
-    await locateDevice(s, device).catch(() => {})
-    await new Promise(r => setTimeout(r, 4000))
-    const resultResp = await queryLocateResult(s, device)
-    if (resultResp.code !== '0') {
-      return { ok: false, error: `定位失败: ${resultResp.info}` }
-    }
-    const info = parseLocateInfo(resultResp.locateInfo)
-
-    const accVal = parseFloat(info.accuracy ?? '')
-    if (!isNaN(accVal) && accVal > ACCURACY_THRESHOLD) {
-      logger.warn('locate', `${acct.name} 精度过低(${accVal}m > ${ACCURACY_THRESHOLD}m)，丢弃`, {
-        accuracy: info.accuracy,
-        lat: info.latitude_WGS,
-        lng: info.longitude_WGS,
+    const result = await doLocateCommon(acct, s, ACCURACY_THRESHOLD)
+    if (result.ok) {
+      const elapsed = Date.now() - startTime
+      logger.info('locate', `${acct.name} 定位完成`, {
+        device: result.record.deviceName,
+        accuracy: result.record.accuracy,
+        lat: result.record.lat,
+        lng: result.record.lng,
+        elapsed: `${elapsed}ms`,
       }, traceId)
-      return { ok: false, error: `精度过低(${accVal}m)` }
+      return { ok: true, record: result.record }
     }
-
-    let address = ''
-    if (s.amapKey) {
-      const [gcjLng, gcjLat] = wgs84ToGcj02(info.longitude_WGS, info.latitude_WGS)
-      try { address = await regeoAddress(gcjLng, gcjLat, s.amapKey) } catch {}
-    }
-
-    const elapsed = Date.now() - startTime
-    logger.info('locate', `${acct.name} 定位完成`, {
-      device: device.deviceAliasName,
-      accuracy: info.accuracy,
-      lat: info.latitude_WGS,
-      lng: info.longitude_WGS,
-      elapsed: `${elapsed}ms`,
-    }, traceId)
-
-    const record: LocationRecord = {
-      timestamp: ts,
-      lat: info.latitude_WGS,
-      lng: info.longitude_WGS,
-      accuracy: info.accuracy?.toString() ?? '',
-      battery: info.batteryStatus?.percentage?.toString() ?? '',
-      address,
-      deviceName: device.deviceAliasName,
-      account: acct.phone,
-      accountName: acct.name,
-      networkName: info.networkInfo?.name,
-      networkType: decodeNetworkType(info.networkInfo?.type ?? ''),
-      networkSignal: decodeSignalStrength(info.networkInfo?.signal ?? ''),
-      simNo: info.simInfo?.no,
-      carrier: info.simDetailInfo?.[0]?.operatorName,
-      isCharging: info.batteryStatus?.isCharging === '1' ? '是' : '否',
-    }
-    return { ok: true, record }
+    logger.warn('locate', `${acct.name} ${result.error}`, undefined, traceId)
+    return { ok: false, error: result.error }
   } catch (err: any) {
     logger.error('locate', `${acct.name} 定位异常: ${err.message}`, undefined, traceId)
     return { ok: false, error: err.message }

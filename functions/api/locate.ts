@@ -1,5 +1,6 @@
-import { doLocate, testSession, saveRecord } from '../../src/locate-common.js'
+import { doLocate, testSession, saveRecord, maybeTriggerLogin } from '../../src/locate-common.js'
 import { logD1 } from '../../src/logger-d1.js'
+import { json } from './_helpers.js'
 import type { AccountConfig, LocationRecord } from '../../src/types.js'
 
 interface Env {
@@ -62,33 +63,4 @@ export async function onRequest(context: any): Promise<Response> {
   return json({ ok: true, record: result.record })
 }
 
-async function maybeTriggerLogin(env: Env): Promise<void> {
-  const pending = await env.SESSION_KV.get('login-in-progress')
-  if (pending) return
 
-  await env.SESSION_KV.put('login-in-progress', JSON.stringify({ since: new Date().toISOString() }), {
-    expirationTtl: 1800,
-  })
-
-  try {
-    const ref = env.GH_REF || 'main'
-    await fetch(`https://api.github.com/repos/${env.GH_REPO}/actions/workflows/login.yml/dispatches`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.GH_PAT}`,
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'honor-trace',
-      },
-      body: JSON.stringify({ ref }),
-    })
-  } catch {
-    // 触发失败不影响主流程
-  }
-}
-
-function json(data: any, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
-}

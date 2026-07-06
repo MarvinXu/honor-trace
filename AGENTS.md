@@ -198,6 +198,12 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **修复 regeo 坐标系错误**: 高德逆地理编码 API 需要 GCJ-02 坐标，此前直接传入 WGS84 导致地址偏移约 500m。新增 `wgs84ToGcj02` 转换函数，三处调用 `regeoAddress` 前先转换
 - **API 响应自带 GCJ 坐标**: `serve.ts` 和 CF Functions 的 `/api/accounts`、`/api/data` 响应中自动附加 `gcjLat`/`gcjLng` 字段，前端不再需要 `wgs2gcj` 内联转换函数
 - **抽取 mapRecord 到共享模块**: `functions/api/_helpers.ts` 统一存放 `mapRecord`，消除 `data.ts` 和 `accounts.ts` 的重复代码
+- **代码重构消除冗余**:
+  - `json()` 从 6 个 functions 文件抽取到 `_helpers.ts`
+  - `maybeTriggerLogin` 从 `locate.ts` + `worker-cron` 抽取到 `locate-common.ts`
+  - `testSession` 三合一：`locate-common.ts` 增加 User-Agent，`serve.ts` 和 `login-http.ts` 改引用
+  - `handleAgreement` 从 `login.ts` + `login-http.ts` 抽取到 `login-http.ts`
+  - `serve.ts` 改用 `locate-common.ts` 的 `doLocate`，仅保留互斥锁包装，消除核心业务逻辑双份维护（同时修复 serve 版 401 静默吞 bug）
 
 ## Key Decisions
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略

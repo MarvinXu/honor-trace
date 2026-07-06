@@ -1,5 +1,6 @@
 import type { Session } from '../../src/types.js'
 import { logD1 } from '../../src/logger-d1.js'
+import { json } from './_helpers.js'
 
 interface Env {
   SESSION_KV: any
@@ -51,11 +52,4 @@ function verifyAuth(req: Request, env: Env): boolean {
   const auth = req.headers.get('Authorization')
   if (!auth || !env.SESSION_API_KEY) return false
   return auth === `Bearer ${env.SESSION_API_KEY}`
-}
-
-function json(data: any, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
 }
