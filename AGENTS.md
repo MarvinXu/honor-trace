@@ -183,6 +183,11 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 ### In Progress
 - (none)
 
+### Done
+- **去重合并原因可追溯**: `shouldDedup` 返回值从 `boolean` 改为 `string | null`（`'同WiFi静止去漂移'` / `'距离XXm'`），D1 日志 `message` 变为 `"去重合并: ${reason}"`，可直接从日志看合并原因
+- **D1 日志 details 补全**: 从 6 字段（lat/lng/accuracy/networkType/networkName/battery）扩展为完整 14 字段，新增 `networkSignal`、`isCharging`、`isLockScreen`、`simNo`、`carrier`、`deviceName`、`address`
+- **合并定位全字段覆盖**: 不再仅更新时间戳，而是全量覆盖旧记录。`updateRecordTimestamp` 重命名为 `updateRecord`，接收完整 `LocationRecord`；D1 UPDATE SQL 从 2 字段扩展为 17 字段全量 SET。解决了合并后电量/状态信息凝固不更新的问题
+
 ## Key Decisions
 - AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
 - 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
@@ -191,7 +196,13 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
 - D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
 - D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
-- 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并"` 和 `"位置变化，新增记录"`
+- 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并: ${reason}"` 和 `"位置变化，新增记录"`
+- 合并时全量覆盖旧记录，保证电量、充电状态、锁屏、信号强度等实时状态不凝固
+
+## 部署说明
+
+- **Pages Functions**（`functions/api/`）：push 到 git 后 Cloudflare Pages 自动部署，无需手动操作
+- **Cron Worker**（`worker-cron/`）：修改后需手动部署：`npx wrangler deploy --config wrangler-cron.toml`
 
 ## Git 工作流
 

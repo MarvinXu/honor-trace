@@ -1,5 +1,4 @@
-import { doLocate, testSession } from '../src/locate-common.js'
-import { shouldDedup } from '../src/dedup.js'
+import { doLocate, testSession, saveRecord } from '../src/locate-common.js'
 import { logD1 } from '../src/logger-d1.js'
 import type { LocationRecord } from '../src/types.js'
 
@@ -59,7 +58,7 @@ export default {
         continue
       }
 
-      await saveRecord(env, acct.phone, result.record)
+      await saveRecord(env.D1, 'cron', acct.phone, result.record)
       okCount++
     }
 
@@ -85,59 +84,6 @@ async function cleanupLogs(env: Env): Promise<void> {
   } catch {
     // cleanup must not break main flow
   }
-}
-
-async function saveRecord(env: Env, account: string, record: LocationRecord): Promise<void> {
-  const details = {
-    lat: record.lat, lng: record.lng, accuracy: record.accuracy,
-    networkType: record.networkType, networkName: record.networkName,
-    battery: record.battery,
-  }
-
-  const last = await env.D1.prepare(
-    'SELECT * FROM location_records WHERE account = ? ORDER BY timestamp DESC LIMIT 1'
-  ).bind(account).all()
-
-  const results = (last as any).results || []
-  if (results.length > 0) {
-    const l = results[0]
-
-    const lastRecord: LocationRecord = {
-      lat: l.lat,
-      lng: l.lng,
-      timestamp: l.timestamp,
-      networkType: l.network_type,
-      networkName: l.network_name,
-      isCharging: l.is_charging,
-      isLockScreen: l.is_lock_screen,
-    } as any
-
-    if (shouldDedup(lastRecord, record)) {
-      await env.D1.prepare('UPDATE location_records SET timestamp = ?, updated_at = ? WHERE id = ?')
-        .bind(record.timestamp, record.timestamp, l.id).run()
-      await logD1(env.D1, 'INFO', 'cron', '去重合并', { ...details, origId: l.id }, account)
-      return
-    }
-  }
-
-  await logD1(env.D1, 'INFO', 'cron', '位置变化，新增记录', details, account)
-  await env.D1.prepare(
-    `INSERT INTO location_records
-     (timestamp, updated_at, lat, lng, accuracy, battery, address, device_name,
-      account, account_name, network_name, network_type, network_signal,
-      sim_no, carrier, is_charging, is_lock_screen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    record.timestamp, null,
-    record.lat, record.lng,
-    record.accuracy, record.battery,
-    record.address, record.deviceName,
-    record.account, record.accountName,
-    record.networkName || null, record.networkType || null,
-    record.networkSignal || null, record.simNo || null,
-    record.carrier || null, record.isCharging || null,
-    record.isLockScreen || null,
-  ).run()
 }
 
 async function maybeTriggerLogin(env: Env): Promise<void> {

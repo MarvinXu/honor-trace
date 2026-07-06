@@ -1,4 +1,6 @@
 import { getMobileDeviceList, locateDevice, queryLocateResult, parseLocateInfo, regeoAddress, decodeNetworkType, decodeSignalStrength } from './api.js'
+import { shouldDedup } from './dedup.js'
+import { logD1 } from './logger-d1.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'
 
 export type SessionTestResult = 'valid' | 'expired' | 'error'
@@ -78,4 +80,85 @@ export async function doLocate(
       isLockScreen: info.isLockScreen === 1 ? '是' : '否',
     },
   }
+}
+
+export async function saveRecord(
+  d1: any,
+  module: string,
+  account: string,
+  record: LocationRecord,
+): Promise<void> {
+  const details = {
+    lat: record.lat, lng: record.lng, accuracy: record.accuracy,
+    networkType: record.networkType, networkName: record.networkName,
+    networkSignal: record.networkSignal,
+    battery: record.battery, isCharging: record.isCharging, isLockScreen: record.isLockScreen,
+    simNo: record.simNo, carrier: record.carrier,
+    deviceName: record.deviceName, address: record.address,
+  }
+
+  const last = await d1.prepare(
+    'SELECT * FROM location_records WHERE account = ? ORDER BY timestamp DESC LIMIT 1'
+  ).bind(account).all()
+
+  const results = (last as any).results || []
+  if (results.length > 0) {
+    const l = results[0]
+    const lastRecord: LocationRecord = {
+      lat: l.lat,
+      lng: l.lng,
+      timestamp: l.timestamp,
+      networkType: l.network_type,
+      networkName: l.network_name,
+      isCharging: l.is_charging,
+      isLockScreen: l.is_lock_screen,
+    } as any
+
+    const reason = shouldDedup(lastRecord, record)
+    if (reason) {
+      await d1.prepare(
+        `UPDATE location_records SET
+          timestamp = ?, updated_at = ?,
+          lat = ?, lng = ?,
+          accuracy = ?, battery = ?,
+          address = ?, device_name = ?,
+          account = ?, account_name = ?,
+          network_name = ?, network_type = ?, network_signal = ?,
+          sim_no = ?, carrier = ?, is_charging = ?, is_lock_screen = ?
+        WHERE id = ?`
+      ).bind(
+        record.timestamp, record.timestamp,
+        record.lat, record.lng,
+        record.accuracy, record.battery,
+        record.address, record.deviceName,
+        record.account, record.accountName,
+        record.networkName || null, record.networkType || null,
+        record.networkSignal || null, record.simNo || null,
+        record.carrier || null, record.isCharging || null,
+        record.isLockScreen || null,
+        l.id,
+      ).run()
+      await logD1(d1, 'INFO', module, `去重合并: ${reason}`, { ...details, origId: l.id }, account)
+      return
+    }
+  }
+
+  await logD1(d1, 'INFO', module, '位置变化，新增记录', details, account)
+  await d1.prepare(
+    `INSERT INTO location_records
+     (timestamp, updated_at, lat, lng, accuracy, battery, address, device_name,
+      account, account_name, network_name, network_type, network_signal,
+      sim_no, carrier, is_charging, is_lock_screen)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    record.timestamp, null,
+    record.lat, record.lng,
+    record.accuracy, record.battery,
+    record.address, record.deviceName,
+    record.account, record.accountName,
+    record.networkName || null, record.networkType || null,
+    record.networkSignal || null, record.simNo || null,
+    record.carrier || null, record.isCharging || null,
+    record.isLockScreen || null,
+  ).run()
 }

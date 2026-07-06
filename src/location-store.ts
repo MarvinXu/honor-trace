@@ -77,7 +77,7 @@ export function deleteRecord(account: string, timestamp?: string, id?: number): 
   return { ok: true, id: removed.id }
 }
 
-export function updateRecordTimestamp(account: string, index: number, timestamp: string): boolean {
+export function updateRecord(account: string, index: number, newRecord: LocationRecord): boolean {
   const records = loadRecords()
   const indices: number[] = []
   for (let i = records.length - 1; i >= 0; i--) {
@@ -85,7 +85,8 @@ export function updateRecordTimestamp(account: string, index: number, timestamp:
   }
   if (index < 0 || index >= indices.length) return false
   const idx = indices[index]
-  records[idx].updatedAt = timestamp
+  const oldId = records[idx].id
+  records[idx] = { ...newRecord, id: oldId, updatedAt: newRecord.timestamp }
   writeFileSync(dataFile(), JSON.stringify(records, null, 2))
   return true
 }

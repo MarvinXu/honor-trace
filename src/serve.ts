@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
 import { randomUUID } from 'crypto'
-import { loadRecords, appendRecord, deleteRecord, updateRecordTimestamp } from './location-store.js'
+import { loadRecords, appendRecord, deleteRecord, updateRecord } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
 import { loadAccounts } from './account-config.js'
 import { shouldDedup } from './dedup.js'
@@ -162,9 +162,10 @@ async function recordingTick(): Promise<void> {
       if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
         continue
       }
-      if (last && shouldDedup(last, result.record)) {
-        updateRecordTimestamp(acct.phone, 0, result.record.timestamp)
-        logger.info('recording', `去重合并 ${acct.name}`, {
+      const dedupReason = last && shouldDedup(last, result.record)
+      if (dedupReason) {
+        updateRecord(acct.phone, 0, result.record)
+        logger.info('recording', `去重合并 ${acct.name}: ${dedupReason}`, {
           newTs: result.record.timestamp, origTs: last.timestamp, origId: last.id,
         }, tickId)
         continue
@@ -293,11 +294,12 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
     if (result.ok && result.record) {
       const records = loadRecords()
       const last = [...records].reverse().find(r => r.account === acct.phone)
+      const dedupReason = last ? shouldDedup(last, result.record) : null
       if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
         // skip
-      } else if (last && shouldDedup(last, result.record)) {
-        updateRecordTimestamp(acct.phone, 0, result.record.timestamp)
-        logger.info('http', `单次定位去重合并 ${acct.name}`, { origId: last.id }, traceId)
+      } else if (dedupReason) {
+        updateRecord(acct.phone, 0, result.record)
+        logger.info('http', `单次定位去重合并 ${acct.name}: ${dedupReason}`, { origId: last!.id }, traceId)
       } else {
         appendRecord(result.record)
       }

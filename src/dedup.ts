@@ -15,16 +15,16 @@ function haversineDist(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-export function shouldDedup(last: LocationRecord, next: LocationRecord, cfg?: Partial<DedupConfig>): boolean {
+export function shouldDedup(last: LocationRecord, next: LocationRecord, cfg?: Partial<DedupConfig>): string | null {
   const c = { ...defaults, ...cfg }
 
-  // 同一 WiFi → 室内静止，去漂移
   if (last.networkType === 'WiFi' && next.networkType === 'WiFi' && last.networkName === next.networkName) {
-    if (last.isCharging !== next.isCharging || last.isLockScreen !== next.isLockScreen) return false
-    return true
+    if (last.isCharging !== next.isCharging || last.isLockScreen !== next.isLockScreen) return null
+    return '同WiFi静止去漂移'
   }
 
-  if (last.isCharging !== next.isCharging) return false
-  if (haversineDist(last.lat, last.lng, next.lat, next.lng) >= c.distanceMeters) return false
-  return true
+  if (last.isCharging !== next.isCharging) return null
+  const dist = haversineDist(last.lat, last.lng, next.lat, next.lng)
+  if (dist >= c.distanceMeters) return null
+  return `距离${Math.round(dist)}m`
 }
