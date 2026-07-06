@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
+import { shouldDedup } from './dedup.js'
 import type { LocationRecord } from './types.js'
 import { logger } from './logger.js'
 
@@ -93,4 +94,23 @@ export function updateRecord(account: string, index: number, newRecord: Location
 
 export function getRecordCount(): number {
   return loadRecords().length
+}
+
+export function saveRecord(record: LocationRecord): { action: 'skip' | 'dedup' | 'append'; origId?: number; id?: number; reason?: string } {
+  const records = loadRecords()
+  const last = [...records].reverse().find(r => r.account === record.account)
+
+  if (last && last.lat === record.lat && last.lng === record.lng && last.timestamp === record.timestamp) {
+    return { action: 'skip' }
+  }
+
+  const reason = last && shouldDedup(last, record)
+  if (reason) {
+    const oldId = last!.id
+    updateRecord(record.account, 0, record)
+    return { action: 'dedup', reason, origId: oldId }
+  }
+
+  appendRecord(record)
+  return { action: 'append', id: record.id }
 }

@@ -204,6 +204,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
   - `testSession` 三合一：`locate-common.ts` 增加 User-Agent，`serve.ts` 和 `login-http.ts` 改引用
   - `handleAgreement` 从 `login.ts` + `login-http.ts` 抽取到 `login-http.ts`
   - `serve.ts` 改用 `locate-common.ts` 的 `doLocate`，仅保留互斥锁包装，消除核心业务逻辑双份维护（同时修复 serve 版 401 静默吞 bug）
+  - `saveRecord` 封装去重合并逻辑到 `location-store.ts`，`recordingTick` 和 `handleApi` 共用
 
 ## Key Decisions
 - `fetch()` 对 HTTP 4xx/5xx 响应不会 throw，必须通过 `res.ok` 或 `res.status` 显式检查 HTTP 状态码，否则 401 错误会被静默忽略

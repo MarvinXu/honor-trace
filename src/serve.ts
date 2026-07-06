@@ -2,10 +2,9 @@ import { createServer } from 'http'
 import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
 import { randomUUID } from 'crypto'
-import { loadRecords, appendRecord, deleteRecord, updateRecord } from './location-store.js'
+import { loadRecords, saveRecord, deleteRecord } from './location-store.js'
 import { loginViaHttp } from './login-http.js'
 import { loadAccounts } from './account-config.js'
-import { shouldDedup } from './dedup.js'
 import { doLocate as doLocateCommon, testSession } from './locate-common.js'
 import { wgs84ToGcj02 } from './api.js'
 import type { Session, LocationRecord, AccountConfig } from './types.js'
@@ -108,20 +107,13 @@ async function recordingTick(): Promise<void> {
   for (const acct of accountConfigs) {
     const result = await doLocate(acct, tickId)
     if (result.ok && result.record) {
-      const records = loadRecords()
-      const last = [...records].reverse().find(r => r.account === acct.phone)
-      if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
-        continue
-      }
-      const dedupReason = last && shouldDedup(last, result.record)
-      if (dedupReason) {
-        updateRecord(acct.phone, 0, result.record)
-        logger.info('recording', `去重合并 ${acct.name}: ${dedupReason}`, {
-          newTs: result.record.timestamp, origTs: last.timestamp, origId: last.id,
+      const r = saveRecord(result.record)
+      if (r.action === 'skip') continue
+      if (r.action === 'dedup') {
+        logger.info('recording', `去重合并 ${acct.name}: ${r.reason}`, {
+          origId: r.origId, newTs: result.record.timestamp,
         }, tickId)
-        continue
       }
-      appendRecord(result.record)
     }
   }
 }
@@ -243,16 +235,9 @@ async function handleApi(req: any, res: any, url: URL): Promise<void> {
     logger.info('http', `手动定位 ${acct.name}`, undefined, traceId)
     const result = await doLocate(acct, traceId)
     if (result.ok && result.record) {
-      const records = loadRecords()
-      const last = [...records].reverse().find(r => r.account === acct.phone)
-      const dedupReason = last ? shouldDedup(last, result.record) : null
-      if (last && last.lat === result.record.lat && last.lng === result.record.lng && last.timestamp === result.record.timestamp) {
-        // skip
-      } else if (dedupReason) {
-        updateRecord(acct.phone, 0, result.record)
-        logger.info('http', `单次定位去重合并 ${acct.name}: ${dedupReason}`, { origId: last!.id }, traceId)
-      } else {
-        appendRecord(result.record)
+      const r = saveRecord(result.record)
+      if (r.action === 'dedup') {
+        logger.info('http', `单次定位去重合并 ${acct.name}: ${r.reason}`, { origId: r.origId }, traceId)
       }
       return done({ ok: true, record: enrichRecord(result.record) })
     }
