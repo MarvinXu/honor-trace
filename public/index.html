@@ -185,13 +185,8 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
       offset: new AMap.Pixel(-opts.radius, -opts.radius),
     })
     map.add(marker)
-    const info = new AMap.InfoWindow({ isCustom: true, offset: [0, -20] })
-    const wrap = document.createElement('div')
-    wrap.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 3px 14px rgba(0,0,0,.3);padding:8px 12px;font-size:13px;line-height:1.6;min-width:180px;position:relative">${popupHtml}<span style="position:absolute;right:8px;top:6px;color:#888;font:bold 16px/1 Tahoma,sans-serif;cursor:pointer;z-index:1">×</span></div><div style="position:relative;width:0;height:0;margin:0 auto"><div style="position:absolute;left:50%;top:0;margin-left:-13px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:13px solid rgba(0,0,0,.07);pointer-events:none"></div><div style="position:absolute;left:50%;top:0;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:12px solid #fff;pointer-events:none"></div></div>`
-    wrap.querySelector('span').onclick = () => info.close()
-    info.setContent(wrap)
-    marker.on('click', () => info.open(map, center))
-    marker._info = info
+    marker._popupHtml = popupHtml
+    marker.on('click', () => Eng.openPopup(marker))
     return marker
   },
   fitBounds: (_allBounds) => {
@@ -199,7 +194,15 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
   },
   setView: (gcj, zoom) => { if (map) map.setZoomAndCenter(zoom, [gcj[1], gcj[0]]) },
   openPopup: (marker) => {
-    if (marker._info) marker._info.open(map, marker.getPosition())
+    if (!marker._popupHtml) return
+    if (marker._info) marker._info.close()
+    const wrap = document.createElement('div')
+    wrap.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 3px 14px rgba(0,0,0,.3);padding:8px 12px;font-size:13px;line-height:1.6;min-width:180px;position:relative">${marker._popupHtml}<span style="position:absolute;right:8px;top:6px;color:#888;font:bold 16px/1 Tahoma,sans-serif;cursor:pointer;z-index:1">×</span></div><div style="position:relative;width:0;height:0;margin:0 auto"><div style="position:absolute;left:50%;top:0;margin-left:-13px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:13px solid rgba(0,0,0,.07);pointer-events:none"></div><div style="position:absolute;left:50%;top:0;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:12px solid #fff;pointer-events:none"></div></div>`
+    const info = new AMap.InfoWindow({ isCustom: true, offset: [0, -20] })
+    wrap.querySelector('span').onclick = () => info.close()
+    info.setContent(wrap)
+    info.open(map, marker.getPosition())
+    marker._info = info
   },
   jumpToPoint: (key, lat, lng) => {
     const gcj = wgs2gcj(lat, lng)
@@ -246,7 +249,7 @@ let trailLines = [], dotMarkers = [], lastTotalCount = -1
 let selectedPhone = null
 let markersByKey = new Map(), dateFrom = null, dateTo = null
 let activePointKey = ''
-function recordKey(r) { return r.id ?? (r.account + '|' + r.timestamp) }
+function recordKey(r) { return String(r.id ?? (r.account + '|' + r.timestamp)) }
 
 function acctColor(phone, accounts) {
   const idx = accounts.findIndex(a => a.phone === phone)

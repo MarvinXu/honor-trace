@@ -187,6 +187,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **去重合并原因可追溯**: `shouldDedup` 返回值从 `boolean` 改为 `string | null`（`'同WiFi静止去漂移'` / `'距离XXm'`），D1 日志 `message` 变为 `"去重合并: ${reason}"`，可直接从日志看合并原因
 - **D1 日志 details 补全**: 从 6 字段（lat/lng/accuracy/networkType/networkName/battery）扩展为完整 14 字段，新增 `networkSignal`、`isCharging`、`isLockScreen`、`simNo`、`carrier`、`deviceName`、`address`
 - **合并定位全字段覆盖**: 不再仅更新时间戳，而是全量覆盖旧记录。`updateRecordTimestamp` 重命名为 `updateRecord`，接收完整 `LocationRecord`；D1 UPDATE SQL 从 2 字段扩展为 17 字段全量 SET。解决了合并后电量/状态信息凝固不更新的问题
+- **修复点位列表切换弹窗 bug**: `recordKey` 在 `r.id` 为数字时返回 number，但 HTML onclick 传参为 string，导致 `Map.get` 严格相等查不到 marker。改为 `String()` 统一为字符串。同时 AMap `openPopup` 每次创建全新 `InfoWindow` 实例，避免 close 后实例复用失败
 
 ## Key Decisions
 - AMap `jumpToPoint` 使用 `setTimeout` 而非 `moveend` 事件，与 Leaflet 保持一致，避免目标点与当前位置太近时 `moveend` 不触发
@@ -198,6 +199,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
 - 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并: ${reason}"` 和 `"位置变化，新增记录"`
 - 合并时全量覆盖旧记录，保证电量、充电状态、锁屏、信号强度等实时状态不凝固
+- AMap `InfoWindow` `isCustom` 模式在 `close()` 后复用同一实例 `open()` 不可靠，改为每次 `openPopup` 创建全新 `InfoWindow` + 全新 DOM。`recordKey` 统一 `String()` 避免 number/string 类型不匹配导致 `Map.get` 查不到 marker
 
 ## 部署说明
 
