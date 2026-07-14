@@ -407,7 +407,7 @@ function renderPointList(selected) {
     if (dateTo && t > dateTo) return false
     return true
   })
-  let html = '<div style="font-weight:600;font-size:12px;margin:4px 0;color:#555">点位列表</div>'
+  let html = `<div style="font-weight:600;font-size:12px;margin:4px 0;color:#555">点位列表（${records.length}）</div>`
   if (records.length === 0) {
     html += '<div style="color:#999;font-size:12px;text-align:center;padding:12px 0">最近一天没有记录</div>'
     el.innerHTML = html
