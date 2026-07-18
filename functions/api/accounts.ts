@@ -16,11 +16,11 @@ export async function onRequest(context: any): Promise<Response> {
 
   let conditions = 'WHERE 1=1'
   const binds: any[] = []
-  if (from) { conditions += ' AND timestamp >= ?'; binds.push(from) }
-  if (to) { conditions += ' AND timestamp <= ?'; binds.push(to) }
+  if (from) { conditions += ' AND COALESCE(updated_at, timestamp) >= ?'; binds.push(from) }
+  if (to) { conditions += ' AND COALESCE(updated_at, timestamp) <= ?'; binds.push(to) }
 
   const { results } = await env.D1.prepare(
-    `SELECT * FROM location_records ${conditions} ORDER BY timestamp ASC`
+    `SELECT * FROM location_records ${conditions} ORDER BY COALESCE(updated_at, timestamp) ASC`
   ).bind(...binds).all()
 
   const result = accounts.map((acct: any) => {

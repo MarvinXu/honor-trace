@@ -173,6 +173,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **页面自动定位**: 页面加载时检查各账号在筛选时间范围内是否有数据，无数据则自动定位。当前账号触发完整前端交互（按钮状态、toast），其他账号后台静默完成
 - **自动选中最新点位**: 页面加载和切换账号后，自动跳转到当前账号最新点位并高亮列表项。通过 `activePointKey` 变量保存选中点，每次 `renderAll` 后恢复高亮，避免 `checkStatus` 轮询重绘导致丢失
 - **记忆选中账号**: 使用 `localStorage` 持久化 `selectedPhone`，刷新页面后恢复上次选中的账号
+- **timestamp/updatedAt 语义分离**: 去重合并时不再覆盖 `timestamp`，只更新 `updatedAt`。`timestamp` = 首次定位到此位置的时间（冻结），`updatedAt` = 最后确认时间。前端 `displayTime` 显示 `开始 ~ 结束 (N分)` 时段。所有筛选/排序全量改用 `COALESCE(updated_at, timestamp)`（D1）/ `updatedAt || timestamp`（前端），防止合并记录被日期过滤漏掉
 
 - **CF Functions 去重合并未更新 timestamp**: `functions/api/locate.ts` 和 `worker-cron/index.ts` 的 `saveRecord` 在去重合并时只 SET `updated_at`，未 SET `timestamp`，导致前端按 `r.timestamp` 筛选时记录被过滤掉。改为同时更新两个字段
 - **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新
@@ -211,13 +212,13 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - `locateDevice` 401 与 `getHomeData` 200 的 session 不一致：荣耀对 `/locate` 接口的认证比 `getHomeData` 更严格，不能仅依赖 `testSession`（测 `getHomeData`）来判断 `locateDevice` 的可用性，必须在 `locateDevice` 返回后兜底检测
 - 将 API 请求/响应日志下沉到 `honor-client.ts` 的 `post()` 中，而非在 `worker-cron` 中写全局 `fetch` 代理，这样本地、Pages Functions、Cron Worker 三个环境都能统一看到日志
 - Cloudflare Workers 模块引用是构建时打包而非运行时加载：`worker-cron/index.ts` 引用的 `../src/locate-service.js` 会在 `wrangler deploy` 时被打包进最终的 Worker bundle 中，修改 `locate-service.ts` 后必须重新部署 `worker-cron` 才能生效
-- 批量去重时合并记录需要同时更新 `timestamp` 为最新时间，仅设 `updatedAt` 会导致前端日期筛选过滤掉合并后的记录
 - 荣耀登录页面新增协议同意弹窗（2026年），登录成功后需检测 "同意" 按钮并点击，否则无法跳转到 `webFindPhone.html`
 - `LocationRecord` 新增 `id` 自增字段（`data/.id-counter` 维护计数器），删除优先按 `id` 精确匹配，向后兼容 `account+timestamp`
 - 日志格式统一为 `[ISO时间] [级别] [模块] [traceId] 消息 { JSON上下文 }`，API 请求自动分配 8 字符 traceId
 - D1 日志 `details` 与 `account` 列分离：`account` 仅通过 `logD1` 第 6 参数传入，`details` JSON 不包含 `account` 避免冗余
 - 每次定位只产 1 行 D1 日志，定位详情（坐标/精度/网络/电量）融入去重决策 log，消息区分 `"去重合并: ${reason}"` 和 `"位置变化，新增记录"`
-- 合并时全量覆盖旧记录，保证电量、充电状态、锁屏、信号强度等实时状态不凝固
+- 合并时全量覆盖旧记录（除 `timestamp` 外），保证电量、充电状态、锁屏、信号强度等实时状态不凝固；`timestamp` 保持创建时间，`updatedAt` 记录最后确认时间
+- 所有按时间筛选/排序的地方必须优先用 `COALESCE(updated_at, timestamp)`（D1）/ `updatedAt || timestamp`（前端），否则合并记录会被日期筛选过滤掉
 - AMap `InfoWindow` `isCustom` 模式在 `close()` 后复用同一实例 `open()` 不可靠，改为每次 `openPopup` 创建全新 `InfoWindow` + 全新 DOM。`recordKey` 统一 `String()` 避免 number/string 类型不匹配导致 `Map.get` 查不到 marker
 
 ## 部署说明

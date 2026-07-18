@@ -108,7 +108,7 @@ export async function saveRecord(
   }
 
   const last = await d1.prepare(
-    'SELECT * FROM location_records WHERE account = ? ORDER BY timestamp DESC LIMIT 1'
+    'SELECT * FROM location_records WHERE account = ? ORDER BY COALESCE(updated_at, timestamp) DESC LIMIT 1'
   ).bind(account).all()
 
   const results = (last as any).results || []
@@ -127,7 +127,7 @@ export async function saveRecord(
     if (reason) {
       await d1.prepare(
         `UPDATE location_records SET
-          timestamp = ?, updated_at = ?,
+          updated_at = ?,
           lat = ?, lng = ?,
           accuracy = ?, battery = ?,
           address = ?, device_name = ?,
@@ -136,7 +136,7 @@ export async function saveRecord(
           sim_no = ?, carrier = ?, is_charging = ?
         WHERE id = ?`
       ).bind(
-        record.timestamp, record.timestamp,
+        record.timestamp,
         record.lat, record.lng,
         record.accuracy, record.battery,
         record.address, record.deviceName,

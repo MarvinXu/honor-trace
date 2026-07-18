@@ -146,7 +146,7 @@ function getAccountStatus(): any[] {
       phone: acct.phone,
       name: acct.name,
       count: records.length,
-      lastUpdate: last?.timestamp || null,
+      lastUpdate: last?.updatedAt || last?.timestamp || null,
       lastLat: last?.lat || null,
       lastLng: last?.lng || null,
       lastAddress: last?.address || null,

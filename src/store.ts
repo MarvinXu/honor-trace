@@ -87,7 +87,8 @@ export function updateRecord(account: string, index: number, newRecord: Location
   if (index < 0 || index >= indices.length) return false
   const idx = indices[index]
   const oldId = records[idx].id
-  records[idx] = { ...newRecord, id: oldId, updatedAt: newRecord.timestamp }
+  const oldTimestamp = records[idx].timestamp
+  records[idx] = { ...newRecord, id: oldId, timestamp: oldTimestamp, updatedAt: newRecord.timestamp }
   writeFileSync(dataFile(), JSON.stringify(records, null, 2))
   return true
 }

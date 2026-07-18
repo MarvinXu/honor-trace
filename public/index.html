@@ -195,7 +195,7 @@ const Eng = MAP_ENGINE === 'leaflet' ? {
     if (!marker._popupHtml) return
     if (marker._info) marker._info.close()
     const wrap = document.createElement('div')
-    wrap.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 3px 14px rgba(0,0,0,.3);padding:8px 12px;font-size:13px;line-height:1.6;min-width:180px;position:relative">${marker._popupHtml}<span style="position:absolute;right:8px;top:6px;color:#888;font:bold 16px/1 Tahoma,sans-serif;cursor:pointer;z-index:1">×</span></div><div style="position:relative;width:0;height:0;margin:0 auto"><div style="position:absolute;left:50%;top:0;margin-left:-13px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:13px solid rgba(0,0,0,.07);pointer-events:none"></div><div style="position:absolute;left:50%;top:0;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:12px solid #fff;pointer-events:none"></div></div>`
+    wrap.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 3px 14px rgba(0,0,0,.3);padding:8px 12px;font-size:13px;line-height:1.6;min-width:180px;position:relative;padding-right:28px">${marker._popupHtml}<span style="position:absolute;right:8px;top:6px;color:#888;font:bold 16px/1 Tahoma,sans-serif;cursor:pointer;z-index:1">×</span></div><div style="position:relative;width:0;height:0;margin:0 auto"><div style="position:absolute;left:50%;top:0;margin-left:-13px;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:13px solid rgba(0,0,0,.07);pointer-events:none"></div><div style="position:absolute;left:50%;top:0;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:12px solid #fff;pointer-events:none"></div></div>`
     const info = new AMap.InfoWindow({ isCustom: true, offset: [0, -20] })
     wrap.querySelector('span').onclick = () => info.close()
     info.setContent(wrap)
@@ -233,7 +233,20 @@ function formatTime(iso) {
   const d = new Date(iso)
   return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
-function displayTime(r) { return formatTime(r.updatedAt || r.timestamp) }
+function displayTime(r) {
+  const t = formatTime(r.updatedAt || r.timestamp)
+  if (r.updatedAt && r.updatedAt !== r.timestamp) {
+    const from = formatTime(r.timestamp)
+    const durMs = new Date(r.updatedAt) - new Date(r.timestamp)
+    const durMin = Math.round(durMs / 60000)
+    let durStr = ''
+    if (durMin >= 1440) durStr = `${Math.floor(durMin/1440)}天${durMin%1440/60|0}时`
+    else if (durMin >= 60) durStr = `${Math.floor(durMin/60)}时${durMin%60}分`
+    else durStr = `${durMin}分`
+    return `${from} ~ ${t} (${durStr})`
+  }
+  return t
+}
 
 function clearLayers() {
   dotMarkers.forEach(m => { if (m._info) m._info.close() })
@@ -257,7 +270,7 @@ function renderAll(accounts) {
   const selected = accounts.find(a => a.phone === selectedPhone)
 
   function inRange(r) {
-    const t = new Date(r.timestamp)
+    const t = new Date(r.updatedAt || r.timestamp)
     if (dateFrom && t < dateFrom) return false
     if (dateTo && t > dateTo) return false
     return true
@@ -402,7 +415,7 @@ function renderPointList(selected) {
   const el = document.getElementById('pointList')
   if (!selected || selected.records.length === 0) { el.innerHTML = ''; return }
   let records = selected.records.filter(r => {
-    const t = new Date(r.timestamp)
+    const t = new Date(r.updatedAt || r.timestamp)
     if (dateFrom && t < dateFrom) return false
     if (dateTo && t > dateTo) return false
     return true
@@ -434,10 +447,12 @@ async function load() {
     lastTotalCount = accts.reduce((s, a) => s + a.records.length, 0)
     const newest = accts.reduce((latest, a) => {
       const last = a.records[a.records.length - 1]
-      return last && (!latest || last.timestamp > latest.timestamp) ? last : latest
+      const lastTime = last && (last.updatedAt || last.timestamp)
+      const latestTime = latest && (latest.updatedAt || latest.timestamp)
+      return last && (!latest || lastTime > latestTime) ? last : latest
     }, null)
     if (newest) {
-      const t = new Date(newest.timestamp)
+      const t = new Date(newest.updatedAt || newest.timestamp)
       if (!dateTo || t > dateTo) {
         dateTo = t
         document.getElementById('filterTo').value = toLocalDateTimeStr(t)
@@ -478,7 +493,7 @@ async function doLocate() {
     }
     if (result.ok) {
       toast(`定位成功: ${result.record.accountName} - ${result.record.address || result.record.lat+', '+result.record.lng}`)
-      const t = new Date(result.record.timestamp)
+      const t = new Date(result.record.updatedAt || result.record.timestamp)
       if (!dateTo || t > dateTo) {
         dateTo = t
         document.getElementById('filterTo').value = toLocalDateTimeStr(t)

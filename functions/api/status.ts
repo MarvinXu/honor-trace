@@ -10,7 +10,7 @@ export async function onRequest(context: any): Promise<Response> {
   const accounts: Array<{ phone: string; name: string }> = accountsRaw ? JSON.parse(accountsRaw) : []
 
   const { results } = await env.D1.prepare(
-    'SELECT account, COUNT(*) as cnt, MAX(timestamp) as last_ts, MAX(lat) as last_lat, MAX(lng) as last_lng, MAX(address) as last_addr FROM location_records GROUP BY account'
+    'SELECT account, COUNT(*) as cnt, MAX(COALESCE(updated_at, timestamp)) as last_ts, MAX(lat) as last_lat, MAX(lng) as last_lng, MAX(address) as last_addr FROM location_records GROUP BY account'
   ).all()
 
   const stats = new Map<string, any>()
