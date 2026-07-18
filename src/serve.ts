@@ -150,6 +150,7 @@ function getAccountStatus(): any[] {
       lastLat: last?.lat || null,
       lastLng: last?.lng || null,
       lastAddress: last?.address || null,
+      lastIsOffline: last?.isOffline || false,
       isLocating: locatingFlags.get(acct.phone) || false,
     }
   })

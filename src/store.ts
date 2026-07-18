@@ -97,10 +97,46 @@ export function getRecordCount(): number {
   return loadRecords().length
 }
 
-export function saveRecord(record: LocationRecord): { action: 'skip' | 'dedup' | 'append'; origId?: number; id?: number; reason?: string } {
+export function saveRecord(record: LocationRecord): { action: 'skip' | 'dedup' | 'append' | 'offline-merge'; origId?: number; id?: number; reason?: string } {
   const records = loadRecords()
   const last = [...records].reverse().find(r => r.account === record.account)
 
+  // ── offline 分支 ──
+  if (record.isOffline) {
+    if (last?.isOffline) {
+      // 连续离线，只更新 updatedAt
+      const idx = records.lastIndexOf(last)
+      records[idx].updatedAt = record.timestamp
+      const dir = dataDir()
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(dataFile(), JSON.stringify(records, null, 2))
+      logger.info('store', `连续离线合并 id=${last.id}`, {
+        origId: last.id, since: last.timestamp,
+      })
+      return { action: 'offline-merge', origId: last.id }
+    }
+    if (last) {
+      // 首次离线，copy 最后在线坐标
+      record.lat = last.lat; record.lng = last.lng
+      record.battery = last.battery; record.address = last.address || ''
+    }
+    appendRecord(record)
+    logger.info('store', `首次离线 id=${record.id}`, {
+      id: record.id, lat: record.lat, lng: record.lng,
+    })
+    return { action: 'append', id: record.id }
+  }
+
+  // ── 上线分支 ──
+  if (last?.isOffline) {
+    appendRecord(record)
+    logger.info('store', `设备上线，新增记录 id=${record.id}`, {
+      id: record.id, name: record.accountName,
+    })
+    return { action: 'append', id: record.id }
+  }
+
+  // ── 在线去重 ──
   if (last && last.lat === record.lat && last.lng === record.lng && last.timestamp === record.timestamp) {
     return { action: 'skip' }
   }

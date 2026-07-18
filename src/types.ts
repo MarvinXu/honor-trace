@@ -70,6 +70,7 @@ export interface QueryLocateResultResponse {
   info: string;
   locateInfo: string;
   executeTime: number;
+  exeResult?: string;
 }
 
 export interface LocateResponse {
@@ -86,6 +87,7 @@ export interface LocationRecord {
   gcjLat?: number;
   gcjLng?: number;
   accuracy: string;
+  isOffline?: boolean;
   battery: string;
   address: string;
   deviceName: string;

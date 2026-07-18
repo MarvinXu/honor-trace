@@ -33,7 +33,8 @@ worker-cron/
 └── index.ts              Cron Trigger Worker（*/5 * * * * 录制轮询 + 日志清理）
 migrations/
 ├── 0000_init.sql          D1 建表 SQL
-└── 0001_logs.sql          D1 request_logs 表
+├── 0001_logs.sql          D1 request_logs 表
+└── 0002_is_offline.sql    location_records 增加 is_offline 列
 scripts/
 └── gh-login.ts           GitHub Action 登录脚本（Playwright → POST session）
 public/
@@ -174,6 +175,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - **自动选中最新点位**: 页面加载和切换账号后，自动跳转到当前账号最新点位并高亮列表项。通过 `activePointKey` 变量保存选中点，每次 `renderAll` 后恢复高亮，避免 `checkStatus` 轮询重绘导致丢失
 - **记忆选中账号**: 使用 `localStorage` 持久化 `selectedPhone`，刷新页面后恢复上次选中的账号
 - **timestamp/updatedAt 语义分离**: 去重合并时不再覆盖 `timestamp`，只更新 `updatedAt`。`timestamp` = 首次定位到此位置的时间（冻结），`updatedAt` = 最后确认时间。前端 `displayTime` 显示 `开始 ~ 结束 (N分)` 时段。所有筛选/排序全量改用 `COALESCE(updated_at, timestamp)`（D1）/ `updatedAt || timestamp`（前端），防止合并记录被日期过滤漏掉
+- **设备离线状态检测**: `doLocate` 检测 `queryLocateResult` 的 `exeResult === '-1'` 判定设备离线，返回 `{ isOffline: true }` 记录。`saveRecord` 实现完整离线/上线分支：连续离线只更新 `updatedAt`，首次离线 copy 上条在线坐标，从离线恢复直接新增。前端图例显示 `⚠ 离线`、详情面板/点位列表/地图标记差异化渲染，离线时长由 `displayTime` 自动支持
 
 - **CF Functions 去重合并未更新 timestamp**: `functions/api/locate.ts` 和 `worker-cron/index.ts` 的 `saveRecord` 在去重合并时只 SET `updated_at`，未 SET `timestamp`，导致前端按 `r.timestamp` 筛选时记录被过滤掉。改为同时更新两个字段
 - **前端定位后未强制重绘**: `doLocate` 成功后 `load()` 因 `total !== lastTotalCount` 守卫跳过重绘（合并场景总数不变），新增 `renderAll` 强制刷新

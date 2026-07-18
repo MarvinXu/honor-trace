@@ -17,6 +17,7 @@ export function mapRecord(r: any): any {
     lng: r.lng,
     gcjLat, gcjLng,
     accuracy: r.accuracy,
+    isOffline: !!r.is_offline,
     battery: r.battery,
     address: r.address,
     deviceName: r.device_name,

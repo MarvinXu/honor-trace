@@ -58,6 +58,23 @@ export async function doLocate(
     return { ok: false, error: `定位失败: ${resultResp.info}` }
   }
 
+  if (resultResp.exeResult === '-1') {
+    return {
+      ok: true,
+      record: {
+        timestamp: ts,
+        lat: 0, lng: 0,
+        accuracy: '',
+        isOffline: true,
+        battery: '',
+        address: '',
+        deviceName: device.deviceAliasName,
+        account: acct.phone,
+        accountName: acct.name,
+      },
+    }
+  }
+
   const info = parseLocateInfo(resultResp.locateInfo)
   const accVal = parseFloat(info.accuracy ?? '')
   if (!isNaN(accVal) && accVal > accuracyThreshold) {
@@ -98,6 +115,70 @@ export async function saveRecord(
   account: string,
   record: LocationRecord,
 ): Promise<void> {
+  const last = await d1.prepare(
+    'SELECT * FROM location_records WHERE account = ? ORDER BY COALESCE(updated_at, timestamp) DESC LIMIT 1'
+  ).bind(account).all()
+
+  const results = (last as any).results || []
+  const l = results[0] as any
+
+  // ── offline 分支 ──
+  if (record.isOffline) {
+    if (l?.is_offline) {
+      // 连续离线，只更新 updatedAt
+      await d1.prepare('UPDATE location_records SET updated_at = ? WHERE id = ?')
+        .bind(record.timestamp, l.id).run()
+      await logD1(d1, 'INFO', module, '连续离线，合并', {
+        origId: l.id, since: l.timestamp,
+      }, account)
+      return
+    }
+    if (l) {
+      // 首次离线，copy 最后在线坐标
+      record.lat = l.lat; record.lng = l.lng
+      record.battery = l.battery; record.address = l.address || ''
+    }
+    await logD1(d1, 'INFO', module, '首次离线', {
+      lat: record.lat, lng: record.lng, battery: record.battery,
+    }, account)
+    await d1.prepare(
+      `INSERT INTO location_records
+       (timestamp, updated_at, lat, lng, accuracy, is_offline,
+        battery, address, device_name, account, account_name)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`
+    ).bind(
+      record.timestamp, null,
+      record.lat, record.lng, record.accuracy,
+      record.battery, record.address, record.deviceName,
+      record.account, record.accountName,
+    ).run()
+    return
+  }
+
+  // ── 上线分支：设备从离线恢复 ──
+  if (l?.is_offline) {
+    await logD1(d1, 'INFO', module, '设备上线，新增记录', {
+      lat: record.lat, lng: record.lng,
+    }, account)
+    await d1.prepare(
+      `INSERT INTO location_records
+       (timestamp, updated_at, lat, lng, accuracy, battery, address, device_name,
+        account, account_name, network_name, network_type, network_signal,
+        sim_no, carrier, is_charging)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      record.timestamp, null,
+      record.lat, record.lng, record.accuracy, record.battery,
+      record.address, record.deviceName,
+      record.account, record.accountName,
+      record.networkName || null, record.networkType || null,
+      record.networkSignal || null, record.simNo || null,
+      record.carrier || null, record.isCharging || null,
+    ).run()
+    return
+  }
+
+  // ── 在线去重 ──
   const details = {
     lat: record.lat, lng: record.lng, accuracy: record.accuracy,
     networkType: record.networkType, networkName: record.networkName,
@@ -107,19 +188,10 @@ export async function saveRecord(
     deviceName: record.deviceName, address: record.address,
   }
 
-  const last = await d1.prepare(
-    'SELECT * FROM location_records WHERE account = ? ORDER BY COALESCE(updated_at, timestamp) DESC LIMIT 1'
-  ).bind(account).all()
-
-  const results = (last as any).results || []
-  if (results.length > 0) {
-    const l = results[0]
+  if (l) {
     const lastRecord: LocationRecord = {
-      lat: l.lat,
-      lng: l.lng,
-      timestamp: l.timestamp,
-      networkType: l.network_type,
-      networkName: l.network_name,
+      lat: l.lat, lng: l.lng, timestamp: l.timestamp,
+      networkType: l.network_type, networkName: l.network_name,
       isCharging: l.is_charging,
     } as any
 

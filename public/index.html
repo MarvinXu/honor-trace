@@ -295,25 +295,39 @@ function renderAll(accounts) {
     if (raw.length === 0) continue
     const color = acctColor(acct.phone, accounts)
 
-    const coords = raw.map(d => [d.gcjLat, d.gcjLng])
-    const line = Eng.polyline(coords, color)
-    trailLines.push(line)
+    const coords = raw.filter(d => !d.isOffline).map(d => [d.gcjLat, d.gcjLng])
+    if (coords.length >= 2) {
+      const line = Eng.polyline(coords, color)
+      trailLines.push(line)
+    }
 
     raw.forEach((d, i) => {
       const isLatest = i === raw.length - 1
-      const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
-      const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
-      const popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${displayTime(d)}</strong><br>
-        ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${d.gcjLat.toFixed(6)}, ${d.gcjLng.toFixed(6)})<br>
-        精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${d.isCharging === '是' ? ' ⚡' : ''}<br>
-        ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
-        <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint(${d.id ?? `'${d.account}','${d.timestamp}'`})">删除此点</button>`
+      const isOffline = d.isOffline
+      let popupHtml
+      if (isOffline) {
+        popupHtml = `<strong>⚠ 离线 · ${displayTime(d)}</strong><br>
+          设备离线时记录<br>
+          ${d.address ? `上次在线地址: ${d.address}<br>` : ''}
+          上次坐标: ${d.lat.toFixed(4)}, ${d.lng.toFixed(4)}<br>
+          电量: ${d.battery || '-'}%
+          <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint(${d.id ?? `'${d.account}','${d.timestamp}'`})">删除此点</button>`
+      } else {
+        const net = [d.networkType, d.networkName, d.networkSignal].filter(Boolean).join(' ')
+        const sim = [d.simNo, d.carrier].filter(Boolean).join(' ')
+        const charging = d.isCharging === '是' ? ' ⚡' : ''
+        popupHtml = `<strong>${acct.name} · ${isLatest ? '最新 · ' : ''}${displayTime(d)}</strong><br>
+          ${d.lat.toFixed(6)}, ${d.lng.toFixed(6)} (GCJ: ${d.gcjLat.toFixed(6)}, ${d.gcjLng.toFixed(6)})<br>
+          精度: ${d.accuracy || '-'}m | 电量: ${d.battery || '-'}%${charging}<br>
+          ${net ? `📡 ${net}<br>` : ''}${sim ? `📱 ${sim}<br>` : ''}${d.address || '地址未知'}
+          <br><button class="btn btn-danger" style="margin-top:4px;padding:2px 10px;font-size:11px" onclick="deletePoint(${d.id ?? `'${d.account}','${d.timestamp}'`})">删除此点</button>`
+      }
       const m = Eng.circleMarker([d.gcjLat, d.gcjLng], {
-        radius: isLatest ? 7 : 5,
-        color: isLatest ? color : dimColor(color),
-        fillColor: isLatest ? color : dimColor(color),
-        fillOpacity: isLatest ? 0.9 : 0.7,
-        weight: isLatest ? 2 : 1,
+        radius: isOffline ? 4 : (isLatest ? 7 : 5),
+        color: isOffline ? '#aaa' : (isLatest ? color : dimColor(color)),
+        fillColor: isOffline ? '#ccc' : (isLatest ? color : dimColor(color)),
+        fillOpacity: isOffline ? 0.5 : (isLatest ? 0.9 : 0.7),
+        weight: isOffline ? 1 : (isLatest ? 2 : 1),
       }, popupHtml)
       dotMarkers.push(m)
       markersByKey.set(recordKey(d), m)
@@ -327,9 +341,11 @@ function renderAll(accounts) {
     const active = acct.phone === selectedPhone ? ' active' : ''
     const cnt = acct.records.length
     const last = acct.lastUpdate ? formatTime(acct.lastUpdate) : '-'
+    const lastRec = acct.records[acct.records.length - 1]
+    const isOffline = lastRec?.isOffline
     legendHtml += `<div class="legend-item${active}" onclick="switchAccount('${acct.phone}')">
       <div class="swatch" style="background:${color}"></div>
-      <span>${acct.name}</span>
+      <span>${acct.name}${isOffline ? ' <span style="color:#e74c3c;font-size:11px">⚠ 离线</span>' : ''}</span>
       <span class="legend-info">${cnt}条 · ${last}</span>
     </div>`
   }
@@ -339,16 +355,28 @@ function renderAll(accounts) {
   // detail
   if (selected && selected.records.length > 0) {
     const last = selected.records[selected.records.length - 1]
-    const net = [last.networkType, last.networkName, last.networkSignal].filter(Boolean).join(' ')
+    const isOffline = last.isOffline
     document.getElementById('detAccountName').textContent = selected.name
-    document.getElementById('detAddress').textContent = last.address || '未知'
-    document.getElementById('detCoords').textContent = `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}`
-    document.getElementById('detAccuracy').textContent = last.accuracy || '-'
-    document.getElementById('detBattery').textContent = last.battery || '-'
-    document.getElementById('detCharging').textContent = last.isCharging === '是' ? '⚡' : ''
-    document.getElementById('detNetwork').textContent = net || '-'
-    document.getElementById('detSim').textContent = last.simNo || '-'
-    document.getElementById('detCarrier').textContent = last.carrier || '-'
+    if (isOffline) {
+      document.getElementById('detAddress').innerHTML = '<span style="color:#e74c3c;font-weight:600">⚠ 设备当前离线</span>'
+      document.getElementById('detCoords').textContent = last.lat ? `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}` : '未知'
+      document.getElementById('detAccuracy').textContent = '-'
+      document.getElementById('detBattery').textContent = last.battery || '-'
+      document.getElementById('detCharging').textContent = ''
+      document.getElementById('detNetwork').textContent = '-'
+      document.getElementById('detSim').textContent = '-'
+      document.getElementById('detCarrier').textContent = '-'
+    } else {
+      document.getElementById('detAddress').textContent = last.address || '未知'
+      document.getElementById('detCoords').textContent = `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}`
+      document.getElementById('detAccuracy').textContent = last.accuracy || '-'
+      document.getElementById('detBattery').textContent = last.battery || '-'
+      document.getElementById('detCharging').textContent = last.isCharging === '是' ? '⚡' : ''
+      const net = [last.networkType, last.networkName, last.networkSignal].filter(Boolean).join(' ')
+      document.getElementById('detNetwork').textContent = net || '-'
+      document.getElementById('detSim').textContent = last.simNo || '-'
+      document.getElementById('detCarrier').textContent = last.carrier || '-'
+    }
     document.getElementById('detTime').textContent = displayTime(last)
     document.getElementById('detail').style.display = ''
   } else {
@@ -429,11 +457,12 @@ function renderPointList(selected) {
   for (let i = records.length - 1; i >= 0; i--) {
     const d = records[i]
     const t = displayTime(d)
-    const addr = d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`
+    const isOffline = d.isOffline
+    const addr = isOffline ? '设备离线' : (d.address || `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`)
     const key = recordKey(d)
-    html += `<div class="point-item" data-key="${key}" onclick="jumpToPoint('${selected.phone}',${d.gcjLat},${d.gcjLng},'${key}')">
-      <div class="pt-time">${t}</div>
-      <div class="pt-addr">${addr}</div>
+    html += `<div class="point-item" data-key="${key}" style="${isOffline ? 'background:#f5f5f5;color:#999' : ''}" onclick="jumpToPoint('${selected.phone}',${d.gcjLat},${d.gcjLng},'${key}')">
+      <div class="pt-time">${t}${isOffline ? ' <span style="color:#e74c3c;font-size:10px;border:1px solid #e74c3c;border-radius:3px;padding:0 4px">离线</span>' : ''}</div>
+      <div class="pt-addr" style="${isOffline ? 'color:#aaa' : ''}">${addr}</div>
     </div>`
   }
   el.innerHTML = html
@@ -567,7 +596,7 @@ if (saved) selectedPhone = saved
 async function autoLocate() {
   const noData = (window._cachedAccounts || []).filter(a =>
     !a.records.some(r => {
-      const t = new Date(r.timestamp)
+      const t = new Date(r.updatedAt || r.timestamp)
       return (!dateFrom || t >= dateFrom) && (!dateTo || t <= dateTo)
     })
   )
