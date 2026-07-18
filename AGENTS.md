@@ -166,7 +166,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
   - API 请求自动生成 8 字符 traceId，可关联请求→定位→保存全链路
   - 定位耗时、API 状态码、登录重试次数等均以结构化 JSON 记录
 - **LocationRecord 自增 id**: 新增 `id` 字段，`data/.id-counter` 文件维护计数器。前端 marker key / 删除接口全部切换为 `id`，向后兼容 `account+timestamp`
-- **去重机制重构**: 三层架构 — ① `accuracy > 500m` 直接丢弃坏数据 ② 同 WiFi 静止去漂移（充电/锁屏变化时保留）③ 非 WiFi 按距离+充电变化决策，移除原有的电池/信号强度判断
+- **去重机制重构**: 三层架构 — ① `accuracy > 500m` 直接丢弃坏数据 ② 同 WiFi 静止去漂移 ③ 非 WiFi 按距离决策，移除原有的电池/信号强度/充电判断
 - **修复 `pad` 作用域 bug**: `pad()` 从 `toLocalDateTimeStr` 内部 `const` 提到顶层函数，`formatTime` 才能访问
 - **最新定位显示不受日期筛选影响**: detail 面板始终使用 unfiltered 最新记录
 - **点位列表选中高亮**: 新增 `.point-item.active` 绿色高亮样式，点击列表项时通过 `data-key` 标记当前选中

@@ -19,11 +19,8 @@ export function shouldDedup(last: LocationRecord, next: LocationRecord, cfg?: Pa
   const c = { ...defaults, ...cfg }
 
   if (last.networkType === 'WiFi' && next.networkType === 'WiFi' && last.networkName === next.networkName) {
-    if (last.isCharging !== next.isCharging) return null
     return '同WiFi静止去漂移'
   }
-
-  if (last.isCharging !== next.isCharging) return null
   const dist = haversineDist(last.lat, last.lng, next.lat, next.lng)
   if (dist >= c.distanceMeters) return null
   return `距离${Math.round(dist)}m`
