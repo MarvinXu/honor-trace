@@ -38,7 +38,7 @@ migrations/
 scripts/
 └── gh-login.ts           GitHub Action 登录脚本（Playwright → POST session）
 public/
-└── index.html            前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选）
+└── index.html            前端地图（Leaflet + 高德瓦片，多账号颜色区分、点位列表、日期筛选、账号显隐控制）
 migrations/
 └── 0000_init.sql          D1 建表 SQL
 ```
@@ -68,6 +68,7 @@ pnpm run serve     # 启动 Web 服务（前端 + API）
 - **停止录制** — 停止轮询
 - **点位列表** — 按时间倒序显示当前账号点位，点击定位到地图
 - **日期筛选** — 按时间范围过滤点位，默认最近 24 小时
+- **账号显隐** — 图例中每账号独立 `隐藏`/`显示` 开关，隐藏后地图不渲染该账号轨迹，选中不改变显隐状态
 
 ## 核心流程
 
@@ -141,7 +142,7 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 荣耀 API 返回 WGS84 坐标。高德瓦片和逆地理编码 API 均使用 GCJ-02，后端在调用 regeo 前由 `wgs84ToGcj02` 转换。API 响应（`/api/accounts`、`/api/data`）自动附加 `gcjLat`/`gcjLng` 字段，前端直接使用，不再内联转换函数。最大瓦片缩放 z=18。
 
 ### 多账号配色
-前端预定义 8 色调色板，每账号按顺序分配独立颜色。轨迹线、标记点、图例统一使用该账号颜色。最新点以纯色大圆标记，历史点为半透明。
+前端预定义 8 色调色板，每账号按顺序分配独立颜色。轨迹线、标记点、图例统一使用该账号颜色。最新点以纯色大圆标记，历史点为半透明。图例每账号附带独立显隐开关（`隐藏`/`显示`），隐藏时地图不渲染该账号轨迹；全部隐藏时状态栏出现「全部显示」一键恢复。选中账号不干预显隐状态，两者完全独立。显隐状态持久化到 localStorage。
 
 ## 代码规范
 
@@ -222,6 +223,9 @@ Playwright 只用于登录获取 cookies，后续 API 请求通过原生 `fetch`
 - 合并时全量覆盖旧记录（除 `timestamp` 外），保证电量、充电状态、锁屏、信号强度等实时状态不凝固；`timestamp` 保持创建时间，`updatedAt` 记录最后确认时间
 - 所有按时间筛选/排序的地方必须优先用 `COALESCE(updated_at, timestamp)`（D1）/ `updatedAt || timestamp`（前端），否则合并记录会被日期筛选过滤掉
 - AMap `InfoWindow` `isCustom` 模式在 `close()` 后复用同一实例 `open()` 不可靠，改为每次 `openPopup` 创建全新 `InfoWindow` + 全新 DOM。`recordKey` 统一 `String()` 避免 number/string 类型不匹配导致 `Map.get` 查不到 marker
+
+### Done
+- **前端账号显隐控制**: 图例每账号增加 `隐藏`/`显示` 按钮（`vis-toggle`），隐藏后地图不渲染该账号轨迹和标记；`hiddenPhones` Set 管理状态，持久化 localStorage；全部隐藏时状态栏出现「全部显示」一键恢复；选中账号与显隐完全独立，互不干预
 
 ## 部署说明
 
